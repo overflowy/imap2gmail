@@ -2,11 +2,47 @@
 
 version: "3"
 
+vars:
+  FRONTEND_DIST: frontend/dist
+  EMBED_DIST: api/internal/web/assets/dist
+
 tasks:
   default:
     cmds:
       - task --list
     silent: true
+
+  gen:
+    desc: Generate sqlc code
+    dir: api
+    cmds:
+      - sqlc generate
+
+  frontend:
+    desc: Build the Vite + Mantine 9 frontend
+    dir: frontend
+    cmds:
+      - bun install
+      - bun run build
+
+  copy:
+    desc: Copy the frontend build into the Go embed dir
+    cmds:
+      - mkdir -p {{.EMBED_DIST}}
+      - cp -R {{.FRONTEND_DIST}}/. {{.EMBED_DIST}}/
+
+  build:
+    desc: Build the self-contained binary
+    deps: [gen, frontend, copy]
+    dir: api
+    cmds:
+      - go build -o ../imap2gmail .
+
+  run:
+    desc: Build then run the server
+    deps: [build]
+    cmds:
+      - ./imap2gmail
 
   fix:
     desc: Apply go fix, vet and gofmt
