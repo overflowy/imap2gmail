@@ -1,5 +1,6 @@
 import {
   createTheme,
+  Badge,
   Paper,
   Button,
   TextInput,
@@ -23,5 +24,6 @@ export const theme = createTheme({
     PasswordInput: PasswordInput.extend({ defaultProps: { radius: "xs" } }),
     Textarea: Textarea.extend({ defaultProps: { radius: "xs" } }),
     Select: Select.extend({ defaultProps: { radius: "xs" } }),
+    Badge: Badge.extend({ defaultProps: { radius: "xs" } }),
   },
 });

@@ -33,6 +33,15 @@ const statusColor: Record<string, string> = {
   stopped: "orange",
 };
 
+const statusLabel: Record<string, string> = {
+  idle: "Idle",
+  running: "Running",
+  ok: "OK",
+  failed: "Failed",
+  skipped: "Skipped",
+  stopped: "Stopped",
+};
+
 export function AccountsTable({
   accounts,
   running,
@@ -153,7 +162,7 @@ export function AccountsTable({
             <Table.Th>Source User</Table.Th>
             <Table.Th style={{ width: 220 }}>Source Password</Table.Th>
             <Table.Th>Destination Gmail</Table.Th>
-            <Table.Th style={{ width: 180 }}>Auth</Table.Th>
+            <Table.Th style={{ width: 210 }}>Auth</Table.Th>
             <Table.Th style={{ width: 260 }}>Actions</Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -202,12 +211,12 @@ export function AccountsTable({
                   )}
                 </Table.Td>
                 <Table.Td>
-                  <Group gap="xs" wrap="nowrap">
+                  <Group gap="xs" wrap="wrap">
                     <Badge color={a.authenticated ? "green" : "gray"} variant="light">
-                      {a.authenticated ? "Authenticated" : "Not auth'd"}
+                      {a.authenticated ? "Authenticated" : "Not Authenticated"}
                     </Badge>
                     <Badge color={statusColor[a.last_status] || "gray"} variant="light">
-                      {a.last_status}
+                      {statusLabel[a.last_status] || a.last_status}
                     </Badge>
                   </Group>
                 </Table.Td>
