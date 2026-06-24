@@ -261,11 +261,11 @@ func TestRunnerStopDuringExec(t *testing.T) {
 	}
 
 	// Operation log must end with the STOPPED terminator.
-	entries, _ := os.ReadDir(paths.AccountLogDir(acc.ID))
+	entries, _ := os.ReadDir(paths.AccountLogDir(acc.SourceUser))
 	if len(entries) == 0 {
 		t.Fatal("no operation log file written")
 	}
-	data, _ := os.ReadFile(filepath.Join(paths.AccountLogDir(acc.ID), entries[0].Name()))
+	data, _ := os.ReadFile(filepath.Join(paths.AccountLogDir(acc.SourceUser), entries[0].Name()))
 	if !strings.Contains(string(data), "==== STOPPED: sync aborted ====") {
 		t.Errorf("log missing STOPPED terminator; tail:\n%s", tail(string(data), 5))
 	}

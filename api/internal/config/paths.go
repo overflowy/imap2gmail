@@ -1,6 +1,6 @@
 // Package config resolves the on-disk paths the app uses, all relative to the
 // binary's current working directory: ./data/db/data.db (secrets, 0600),
-// ./data/logs/<account_id>/ (per-operation sync logs), and ./run/ (0700,
+// ./data/logs/<source_user>/ (per-operation sync logs), and ./run/ (0700,
 // transient 0600 token files passed to imapsync).
 package config
 
@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -48,19 +49,34 @@ func Resolve() (*Paths, error) {
 	}, nil
 }
 
+// sanitizeLogDir makes a source_user safe for use as a single path component
+// under the logs root: path separators and null bytes are replaced, and empty /
+// traversal segments collapse to "_" so a crafted or odd username cannot escape
+// the logs directory.
+func sanitizeLogDir(name string) string {
+	s := strings.NewReplacer("/", "_", "\\", "_", "\x00", "_").Replace(name)
+	s = strings.TrimSpace(s)
+	if s == "" || s == "." || s == ".." {
+		return "_"
+	}
+	return s
+}
+
 // LogPath returns the full path for a given account's operation log, identified
-// by an RFC3339 timestamp string. The account's log directory is created lazily.
-func (p *Paths) LogPath(accountID int64, ts string) (string, error) {
-	dir := filepath.Join(logsDir, fmt.Sprintf("%d", accountID))
+// by an RFC3339 timestamp string. The account's log directory (keyed by
+// source_user) is created lazily.
+func (p *Paths) LogPath(sourceUser, ts string) (string, error) {
+	dir := filepath.Join(p.LogsDir, sanitizeLogDir(sourceUser))
 	if err := os.MkdirAll(dir, logsPerm); err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, ts+".log"), nil
 }
 
-// AccountLogDir returns the directory holding one account's operation logs.
-func (p *Paths) AccountLogDir(accountID int64) string {
-	return filepath.Join(logsDir, fmt.Sprintf("%d", accountID))
+// AccountLogDir returns the directory holding one account's operation logs,
+// keyed by source_user.
+func (p *Paths) AccountLogDir(sourceUser string) string {
+	return filepath.Join(p.LogsDir, sanitizeLogDir(sourceUser))
 }
 
 // TokenFilePath returns a 0600-destined path for an account's access-token file.

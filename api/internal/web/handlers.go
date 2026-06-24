@@ -456,7 +456,12 @@ func (s *Server) listAccountLogs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ops := listOpsForAccount(s.paths.AccountLogDir(id))
+	acc, err := s.q.GetAccount(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "account not found"})
+		return
+	}
+	ops := listOpsForAccount(s.paths.AccountLogDir(acc.SourceUser))
 	writeJSON(w, http.StatusOK, ops)
 }
 
@@ -465,12 +470,17 @@ func (s *Server) getAccountLog(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	acc, err := s.q.GetAccount(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "account not found"})
+		return
+	}
 	ts := r.URL.Query().Get("ts")
 	if ts == "" || strings.ContainsAny(ts, "/\\") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid ts"})
 		return
 	}
-	path := filepath.Join(s.paths.AccountLogDir(id), ts+".log")
+	path := filepath.Join(s.paths.AccountLogDir(acc.SourceUser), ts+".log")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "log not found"})
@@ -480,22 +490,15 @@ func (s *Server) getAccountLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listOperations(w http.ResponseWriter, r *http.Request) {
-	entries, err := os.ReadDir(s.paths.LogsDir)
+	accounts, err := s.q.ListAccounts(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusOK, []operationDTO{})
 		return
 	}
 	ops := []operationDTO{}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		accountID, err := strconv.ParseInt(e.Name(), 10, 64)
-		if err != nil {
-			continue
-		}
-		for _, op := range listOpsForAccount(s.paths.AccountLogDir(accountID)) {
-			ops = append(ops, operationDTO{AccountID: accountID, OperationID: op})
+	for _, acc := range accounts {
+		for _, op := range listOpsForAccount(s.paths.AccountLogDir(acc.SourceUser)) {
+			ops = append(ops, operationDTO{AccountID: acc.ID, OperationID: op})
 		}
 	}
 	sort.Slice(ops, func(i, j int) bool { return ops[i].OperationID > ops[j].OperationID })

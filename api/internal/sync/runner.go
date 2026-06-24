@@ -190,7 +190,7 @@ func (r *Runner) syncAccount(runCtx context.Context, accountID int64) {
 		OperationID: opID, Timestamp: nowRFC3339(),
 	})
 
-	logPath, logErr := r.deps.Paths.LogPath(accountID, opID)
+	logPath, logErr := r.deps.Paths.LogPath(sourceUser, opID)
 	if logErr != nil {
 		r.logLine(accountID, sourceUser, opID, "", "==== FAILED: create log dir: "+logErr.Error()+" ====")
 		r.mark(dbc, accountID, sourceUser, opID, "failed", "create log dir: "+logErr.Error())
