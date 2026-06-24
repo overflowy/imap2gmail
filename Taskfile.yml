@@ -1,0 +1,17 @@
+# https://taskfile.dev
+
+version: "3"
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  fix:
+    desc: Apply go fix, vet and gofmt
+    dir: api
+    cmds:
+      - go fix ./...
+      - go vet ./...
+      - gofmt -w .
