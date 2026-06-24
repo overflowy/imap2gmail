@@ -295,7 +295,7 @@ export function AccountsTable({
                 <CopyButton value={authModal.url} timeout={2000}>
                   {({ copied, copy }) => (
                     <Tooltip label={copied ? "Copied" : "Copy"} withArrow>
-                      <Button color={copied ? "teal" : "indigo"} onClick={copy}>
+                      <Button color={copied ? "teal" : "indigo"} onClick={copy} w={140}>
                         {copied ? "Copied" : "Copy"}
                       </Button>
                     </Tooltip>
@@ -314,6 +314,7 @@ export function AccountsTable({
                   disabled={!pasteCode}
                   loading={exchange.isPending}
                   onClick={() => exchange.mutate()}
+                  w={140}
                 >
                   Exchange Code
                 </Button>
