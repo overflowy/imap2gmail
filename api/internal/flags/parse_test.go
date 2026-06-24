@@ -36,6 +36,9 @@ func TestValidate(t *testing.T) {
 		"--automap --dry",        // --dry is app-managed
 		"--oauthaccesstoken2 /x", // denied
 		"--gmail2",               // denied
+		"--automap --log",        // file logging app-managed
+		"--nolog",                // file logging app-managed
+		"--logdir /tmp/x",        // file logging app-managed
 	}
 	for _, s := range bad {
 		if err := Validate(s); err == nil {

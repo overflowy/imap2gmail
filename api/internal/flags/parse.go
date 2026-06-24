@@ -13,7 +13,9 @@ import (
 
 // DeniedFlags are owned by the app/checkbox and must not appear in the global
 // flag string: connection, credentials, identity (source + destination), OAuth
-// tokens/refresh, admin-auth users, the Gmail-mode switch, and dry-run.
+// tokens/refresh, admin-auth users, the Gmail-mode switch, dry-run, and file
+// logging (the app captures combined output itself, so imapsync's
+// LOG_imapsync/ directory logging is suppressed via --nolog and must stay off).
 var DeniedFlags = map[string]struct{}{
 	"--host1":             {},
 	"--port1":             {},
@@ -36,6 +38,10 @@ var DeniedFlags = map[string]struct{}{
 	"--oauthrefreshcmd2":  {},
 	"--gmail2":            {},
 	"--dry":               {},
+	"--log":               {},
+	"--nolog":             {},
+	"--logfile":           {},
+	"--logdir":            {},
 }
 
 // Parse tokenizes the flag string (POSIX-ish: single/double quotes and

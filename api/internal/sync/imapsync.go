@@ -47,6 +47,7 @@ func BuildArgv(s gen.Setting, account gen.Account, tokenFile string) ([]string, 
 		"--user2", account.DestGmail,
 		"--oauthaccesstoken2", tokenFile,
 		"--gmail2",
+		"--nolog",
 	)
 	argv = append(argv, extra...)
 	if s.DryRun {

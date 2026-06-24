@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS settings (
     origin_port     INTEGER NOT NULL DEFAULT 993,
     origin_ssl      INTEGER NOT NULL DEFAULT 1,         -- bool
     imapsync_flags  TEXT NOT NULL DEFAULT
-        '--automap --syncinternaldates --useheader Message-Id --skipsize --nofoldersizes',
+        '--automap --syncinternaldates --useheader Message-Id --skipsize --nofoldersizes --maxmessagespersecond 3 --maxsleep 2 --noreleasecheck --noresyncflags',
     max_concurrent  INTEGER NOT NULL DEFAULT 1 CHECK (max_concurrent BETWEEN 1 AND 8),
     dry_run         INTEGER NOT NULL DEFAULT 1          -- bool, default ON for safety
 );

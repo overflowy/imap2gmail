@@ -48,6 +48,7 @@ func TestBuildArgvBasic(t *testing.T) {
 		"--user2", "alice@gmail.com",
 		"--oauthaccesstoken2", "/run/token-7.txt",
 		"--gmail2",
+		"--nolog",
 		"--automap", "--useheader", "Message-Id",
 		"--dry",
 	}
@@ -76,6 +77,9 @@ func TestBuildArgvNoSslNoDry(t *testing.T) {
 	}
 	if !contains(argv, "--gmail2") {
 		t.Error("expected --gmail2")
+	}
+	if !contains(argv, "--nolog") {
+		t.Error("expected --nolog to suppress LOG_imapsync/ file logging")
 	}
 }
 

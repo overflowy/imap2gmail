@@ -1,13 +1,16 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ActionIcon,
   Badge,
-  Box,
   Button,
   Checkbox,
+  CopyButton,
   Group,
+  Modal,
+  Paper,
   PasswordInput,
+  Stack,
   Table,
   TextInput,
   Tooltip,
@@ -31,17 +34,22 @@ const statusColor: Record<string, string> = {
 };
 
 export function AccountsTable({
-  notify,
-  onAuthUrl,
+  accounts,
   running,
+  notify,
+  onAdd,
+  onImport,
 }: {
-  notify: (color: string, msg: string) => void;
-  onAuthUrl: (url: string, accountId: number) => void;
+  accounts: Account[];
   running: boolean;
+  notify: (color: string, msg: string) => void;
+  onAdd: () => void;
+  onImport: () => void;
 }) {
   const qc = useQueryClient();
-  const { data: accounts } = useQuery({ queryKey: qk.accounts, queryFn: api.listAccounts });
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
+  const [authModal, setAuthModal] = useState<{ url: string; accountId: number } | null>(null);
+  const [pasteCode, setPasteCode] = useState("");
 
   const invalidate = () => qc.invalidateQueries({ queryKey: qk.accounts });
 
@@ -65,7 +73,17 @@ export function AccountsTable({
   });
   const auth = useMutation({
     mutationFn: (id: number) => api.authURL(id),
-    onSuccess: (d, id) => onAuthUrl(d.auth_url, id),
+    onSuccess: (d, id) => setAuthModal({ url: d.auth_url, accountId: id }),
+    onError: (e: Error) => notify("red", e.message),
+  });
+  const exchange = useMutation({
+    mutationFn: () => api.authExchange(authModal!.accountId, pasteCode),
+    onSuccess: () => {
+      invalidate();
+      setAuthModal(null);
+      setPasteCode("");
+      notify("green", "Tokens exchanged");
+    },
     onError: (e: Error) => notify("red", e.message),
   });
   const syncOne = useMutation({
@@ -101,22 +119,32 @@ export function AccountsTable({
   const setDraft = (id: number, patch: Partial<Draft>) =>
     setDrafts((d) => ({ ...d, [id]: { ...d[id], ...patch } }));
 
-  const dupCount = (accounts || []).filter((a) => a.duplicate).length;
+  const dupCount = accounts.filter((a) => a.duplicate).length;
 
   return (
-    <Box>
-      <Group mb="xs">
-        <Button variant="default" size="xs" onClick={() => checkAll.mutate()}>
-          Select All
-        </Button>
-        <Button variant="default" size="xs" onClick={() => checkNone.mutate()}>
-          Select None
-        </Button>
-        {dupCount > 0 && (
-          <Badge color="red">
-            {dupCount} duplicate source{dupCount > 1 ? "s" : ""} — blocked from sync
-          </Badge>
-        )}
+    <Paper>
+      <Group justify="space-between" mb="xs">
+        <Group>
+          <Button variant="default" onClick={onAdd}>
+            Add Row
+          </Button>
+          <Button variant="default" onClick={onImport}>
+            Import
+          </Button>
+        </Group>
+        <Group>
+          <Button variant="default" size="xs" onClick={() => checkAll.mutate()}>
+            Select All
+          </Button>
+          <Button variant="default" size="xs" onClick={() => checkNone.mutate()}>
+            Select None
+          </Button>
+          {dupCount > 0 && (
+            <Badge color="red">
+              {dupCount} duplicate source{dupCount > 1 ? "s" : ""} — blocked from sync
+            </Badge>
+          )}
+        </Group>
       </Group>
       <Table striped highlightOnHover withTableBorder>
         <Table.Thead>
@@ -130,13 +158,10 @@ export function AccountsTable({
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {(accounts || []).map((a) => {
+          {accounts.map((a) => {
             const d = drafts[a.id];
             return (
-              <Table.Tr
-                key={a.id}
-                bg={a.duplicate ? "var(--mantine-color-red-1)" : undefined}
-              >
+              <Table.Tr key={a.id} bg={a.duplicate ? "var(--mantine-color-red-1)" : undefined}>
                 <Table.Td>
                   <Checkbox
                     checked={a.sync_checked}
@@ -177,12 +202,14 @@ export function AccountsTable({
                   )}
                 </Table.Td>
                 <Table.Td>
-                  <Badge color={a.authenticated ? "green" : "gray"} variant="light">
-                    {a.authenticated ? "Authenticated" : "Not auth'd"}
-                  </Badge>{" "}
-                  <Badge color={statusColor[a.last_status] || "gray"} variant="light">
-                    {a.last_status}
-                  </Badge>
+                  <Group gap="xs" wrap="nowrap">
+                    <Badge color={a.authenticated ? "green" : "gray"} variant="light">
+                      {a.authenticated ? "Authenticated" : "Not auth'd"}
+                    </Badge>
+                    <Badge color={statusColor[a.last_status] || "gray"} variant="light">
+                      {a.last_status}
+                    </Badge>
+                  </Group>
                 </Table.Td>
                 <Table.Td>
                   <Group gap="xs">
@@ -222,7 +249,7 @@ export function AccountsTable({
               </Table.Tr>
             );
           })}
-          {(!accounts || accounts.length === 0) && (
+          {accounts.length === 0 && (
             <Table.Tr>
               <Table.Td colSpan={6} style={{ textAlign: "center", opacity: 0.6 }}>
                 No accounts yet. Use Add Row or Import.
@@ -231,6 +258,56 @@ export function AccountsTable({
           )}
         </Table.Tbody>
       </Table>
-    </Box>
+
+      <Modal
+        opened={authModal !== null}
+        onClose={() => {
+          setAuthModal(null);
+          setPasteCode("");
+        }}
+        title="Authorize Gmail"
+        size="xl"
+      >
+        <Stack>
+          {authModal && (
+            <>
+              <Group align="flex-end">
+                <TextInput
+                  label="Auth URL (open it to authorize Gmail)"
+                  readOnly
+                  value={authModal.url}
+                  style={{ flex: 1 }}
+                />
+                <CopyButton value={authModal.url} timeout={2000}>
+                  {({ copied, copy }) => (
+                    <Tooltip label={copied ? "Copied" : "Copy"} withArrow>
+                      <Button color={copied ? "teal" : "indigo"} onClick={copy}>
+                        {copied ? "Copied" : "Copy"}
+                      </Button>
+                    </Tooltip>
+                  )}
+                </CopyButton>
+              </Group>
+              <Group align="flex-end">
+                <TextInput
+                  placeholder="…or paste the authorization code here (manual fallback)"
+                  value={pasteCode}
+                  onChange={(e) => setPasteCode(e.currentTarget.value)}
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  variant="default"
+                  disabled={!pasteCode}
+                  loading={exchange.isPending}
+                  onClick={() => exchange.mutate()}
+                >
+                  Exchange Code
+                </Button>
+              </Group>
+            </>
+          )}
+        </Stack>
+      </Modal>
+    </Paper>
   );
 }

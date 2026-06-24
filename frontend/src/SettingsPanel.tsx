@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Alert,
-  Box,
   Button,
   Collapse,
   Group,
   NumberInput,
+  Paper,
   PasswordInput,
   Stack,
   Switch,
@@ -34,14 +34,14 @@ export function SettingsPanel({ notify }: { notify: (color: string, msg: string)
   const set = (patch: Partial<Settings>) => setForm({ ...form, ...patch });
 
   return (
-    <Box>
-      <Group justify="space-between" mb="xs">
+    <Paper>
+      <Group justify="space-between" align="center" mb="xs">
         <Button variant="subtle" onClick={() => setOpen((o) => !o)}>
           {open ? "▾" : "▸"} Settings
         </Button>
       </Group>
       <Collapse expanded={open}>
-        <Stack>
+        <Stack gap="md">
           <Group grow>
             <TextInput
               label="OAuth Client ID"
@@ -67,12 +67,18 @@ export function SettingsPanel({ notify }: { notify: (color: string, msg: string)
             />
             <Switch
               label="Origin SSL"
+              style={{
+                alignSelf: "flex-end",
+                height: "calc(2.25rem * var(--mantine-scale))",
+                display: "flex",
+                alignItems: "center",
+              }}
               checked={form.origin_ssl}
               onChange={(e) => set({ origin_ssl: e.currentTarget.checked })}
             />
           </Group>
           <Textarea
-            label="imapsync flags (global, editable)"
+            label="imapsync flags (global)"
             autosize
             minRows={2}
             value={form.imapsync_flags}
@@ -85,7 +91,7 @@ export function SettingsPanel({ notify }: { notify: (color: string, msg: string)
               onChange={(v) => set({ bind_port: Number(v) || 0 })}
             />
             <NumberInput
-              label="Max Concurrent (1–8)"
+              label="Max Concurrent (1-8)"
               min={1}
               max={8}
               value={form.max_concurrent}
@@ -93,22 +99,28 @@ export function SettingsPanel({ notify }: { notify: (color: string, msg: string)
             />
             <Switch
               label="Dry Run"
+              style={{
+                alignSelf: "flex-end",
+                height: "calc(2.25rem * var(--mantine-scale))",
+                display: "flex",
+                alignItems: "center",
+              }}
               checked={form.dry_run}
               onChange={(e) => set({ dry_run: e.currentTarget.checked })}
             />
           </Group>
-          <TextInput label="Redirect URL (derived, read-only)" readOnly value={form.redirect_url} />
+          <TextInput label="Redirect URL (read-only)" readOnly value={form.redirect_url} />
           <Alert color="yellow" p="xs">
             Changing bind_port requires re-registering this URL in Google Console → Authorized
             redirect URIs, then restarting the app (the server only rebinds on restart).
           </Alert>
-          <Group>
+          <Group justify="flex-end">
             <Button loading={save.isPending} onClick={() => save.mutate(form)}>
               Save Settings
             </Button>
           </Group>
         </Stack>
       </Collapse>
-    </Box>
+    </Paper>
   );
 }

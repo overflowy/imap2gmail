@@ -4,21 +4,19 @@ import {
   Alert,
   Button,
   Container,
-  CopyButton,
   Group,
   Modal,
+  PasswordInput,
   Stack,
   TextInput,
   Textarea,
   Title,
 } from "@mantine/core";
 import { api, qk } from "./api";
-import { useSSE } from "./useSSE";
 import { SettingsPanel } from "./SettingsPanel";
 import { AccountsTable } from "./AccountsTable";
 import { OutputPane } from "./OutputPane";
 
-type LogMap = Record<string, string[]>;
 type Notice = { color: string; msg: string };
 
 export default function App() {
@@ -27,9 +25,6 @@ export default function App() {
   const running = (accounts || []).some((a) => a.last_status === "running");
 
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [logs, setLogs] = useState<LogMap>({});
-  const [authUrl, setAuthUrl] = useState<{ url: string; accountId: number } | null>(null);
-  const [pasteCode, setPasteCode] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
@@ -39,12 +34,6 @@ export default function App() {
     setNotice({ color, msg });
     window.setTimeout(() => setNotice(null), 4000);
   };
-
-  // Single global SSE connection: append live log lines + invalidate caches.
-  useSSE((accountId, operationId, line) => {
-    const key = `${accountId}|${operationId}`;
-    setLogs((prev) => ({ ...prev, [key]: [...(prev[key] || []), line] }));
-  });
 
   // OAuth callback feedback (?auth=ok|err set by the redirect).
   useEffect(() => {
@@ -85,20 +74,11 @@ export default function App() {
     },
     onError: (e: Error) => notify("red", e.message),
   });
-  const exchange = useMutation({
-    mutationFn: () => api.authExchange(authUrl!.accountId, pasteCode),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.accounts });
-      setPasteCode("");
-      notify("green", "Tokens exchanged");
-    },
-    onError: (e: Error) => notify("red", e.message),
-  });
 
   return (
     <Container size="xl" py="md">
       <Stack gap="md">
-        <Group justify="space-between">
+        <Group justify="space-between" align="center">
           <Title order={3}>imap2gmail</Title>
           <Group>
             <Button
@@ -123,58 +103,15 @@ export default function App() {
 
         <SettingsPanel notify={notify} />
 
-        {/* Auth URL bar */}
-        {authUrl && (
-          <Stack gap="xs">
-            <Group align="flex-end">
-              <TextInput
-                label="Auth URL (open it to authorize Gmail)"
-                readOnly
-                value={authUrl.url}
-                style={{ flex: 1 }}
-              />
-              <CopyButton value={authUrl.url}>
-                {({ copied }) => (
-                  <Button color={copied ? "teal" : "indigo"}>{copied ? "Copied" : "Copy"}</Button>
-                )}
-              </CopyButton>
-            </Group>
-            <Group align="flex-end">
-              <TextInput
-                placeholder="…or paste the authorization code here (manual fallback)"
-                value={pasteCode}
-                onChange={(e) => setPasteCode(e.currentTarget.value)}
-                style={{ flex: 1 }}
-              />
-              <Button
-                variant="default"
-                disabled={!pasteCode}
-                loading={exchange.isPending}
-                onClick={() => exchange.mutate()}
-              >
-                Exchange Code
-              </Button>
-            </Group>
-          </Stack>
-        )}
-
-        {/* Toolbar */}
-        <Group>
-          <Button variant="default" onClick={() => setAddOpen(true)}>
-            Add Row
-          </Button>
-          <Button variant="default" onClick={() => setImportOpen(true)}>
-            Import
-          </Button>
-        </Group>
-
         <AccountsTable
-          notify={notify}
+          accounts={accounts ?? []}
           running={running}
-          onAuthUrl={(url, accountId) => setAuthUrl({ url, accountId })}
+          notify={notify}
+          onAdd={() => setAddOpen(true)}
+          onImport={() => setImportOpen(true)}
         />
 
-        <OutputPane logs={logs} setLogs={setLogs} />
+        <OutputPane accounts={accounts ?? []} />
       </Stack>
 
       {/* Add Row modal */}
@@ -185,7 +122,7 @@ export default function App() {
             value={addForm.source_user}
             onChange={(e) => setAddForm({ ...addForm, source_user: e.currentTarget.value })}
           />
-          <TextInput
+          <PasswordInput
             label="Source Password"
             value={addForm.source_password}
             onChange={(e) => setAddForm({ ...addForm, source_password: e.currentTarget.value })}
