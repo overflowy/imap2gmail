@@ -48,12 +48,14 @@ export function AccountsTable({
   notify,
   onAdd,
   onImport,
+  onSyncStart,
 }: {
   accounts: Account[];
   running: boolean;
   notify: (color: string, msg: string) => void;
   onAdd: () => void;
   onImport: () => void;
+  onSyncStart: (id: number) => void;
 }) {
   const qc = useQueryClient();
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
@@ -138,7 +140,7 @@ export function AccountsTable({
             Add Row
           </Button>
           <Button variant="default" onClick={onImport}>
-            Import
+            Import from CSV
           </Button>
         </Group>
         <Group>
@@ -240,7 +242,10 @@ export function AccountsTable({
                           <Button
                             size="xs"
                             disabled={running || a.duplicate}
-                            onClick={() => syncOne.mutate(a.id)}
+                            onClick={() => {
+                              onSyncStart(a.id);
+                              syncOne.mutate(a.id);
+                            }}
                           >
                             Sync
                           </Button>

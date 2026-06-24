@@ -10,18 +10,39 @@ function opKey(accountId: number, operationId: string) {
   return `${accountId}|${operationId}`;
 }
 
-export function OutputPane({ accounts }: { accounts: Account[] }) {
+export function OutputPane({
+  accounts,
+  syncSelect,
+}: {
+  accounts: Account[];
+  syncSelect: { accountId: number; token: number } | null;
+}) {
   const { data: ops } = useQuery({ queryKey: qk.operations, queryFn: api.listOperations });
   const [logs, setLogs] = useState<LogMap>({});
   const [selected, setSelected] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
+  // When a sync is started, auto-select the target account's next operation log
+  // once its "operation" event arrives.
+  const autoSelectAccountId = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (syncSelect) autoSelectAccountId.current = syncSelect.accountId;
+  }, [syncSelect]);
 
   // Single global SSE connection: append live log lines + invalidate caches.
-  useSSE((accountId, operationId, line) => {
-    const key = opKey(accountId, operationId);
-    setLogs((prev) => ({ ...prev, [key]: [...(prev[key] || []), line] }));
-  });
+  useSSE(
+    (accountId, operationId, line) => {
+      const key = opKey(accountId, operationId);
+      setLogs((prev) => ({ ...prev, [key]: [...(prev[key] || []), line] }));
+    },
+    (accountId, operationId) => {
+      if (autoSelectAccountId.current === accountId) {
+        autoSelectAccountId.current = null;
+        setSelected(opKey(accountId, operationId));
+      }
+    },
+  );
 
   const accountMap = new Map<number, string>();
   accounts.forEach((a) => accountMap.set(a.id, a.source_user));

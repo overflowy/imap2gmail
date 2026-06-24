@@ -19,11 +19,14 @@ type SSEEvent = {
  * events so the table and operation selector stay in sync without polling.
  */
 export function useSSE(
-  onLog: (accountId: number, operationId: string, line: string) => void
+  onLog: (accountId: number, operationId: string, line: string) => void,
+  onOperation?: (accountId: number, operationId: string) => void,
 ) {
   const qc = useQueryClient();
   const onLogRef = useRef(onLog);
   onLogRef.current = onLog;
+  const onOperationRef = useRef(onOperation);
+  onOperationRef.current = onOperation;
 
   useEffect(() => {
     const es = new EventSource("/events");
@@ -43,6 +46,9 @@ export function useSSE(
         case "operation":
           qc.invalidateQueries({ queryKey: qk.operations });
           qc.invalidateQueries({ queryKey: qk.accounts });
+          if (ev.account_id != null && ev.operation_id) {
+            onOperationRef.current?.(ev.account_id, ev.operation_id);
+          }
           break;
       }
     };

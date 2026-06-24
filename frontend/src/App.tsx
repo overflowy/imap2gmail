@@ -29,6 +29,7 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [addForm, setAddForm] = useState({ source_user: "", source_password: "", dest_gmail: "" });
+  const [syncSelect, setSyncSelect] = useState<{ accountId: number; token: number } | null>(null);
 
   const notify = (color: string, msg: string) => {
     setNotice({ color, msg });
@@ -85,7 +86,11 @@ export default function App() {
               color="indigo"
               loading={syncAll.isPending}
               disabled={running}
-              onClick={() => syncAll.mutate()}
+              onClick={() => {
+                const first = (accounts || []).find((a) => a.sync_checked && !a.duplicate);
+                if (first) setSyncSelect({ accountId: first.id, token: Date.now() });
+                syncAll.mutate();
+              }}
             >
               Sync All
             </Button>
@@ -109,9 +114,10 @@ export default function App() {
           notify={notify}
           onAdd={() => setAddOpen(true)}
           onImport={() => setImportOpen(true)}
+          onSyncStart={(id) => setSyncSelect({ accountId: id, token: Date.now() })}
         />
 
-        <OutputPane accounts={accounts ?? []} />
+        <OutputPane accounts={accounts ?? []} syncSelect={syncSelect} />
       </Stack>
 
       {/* Add Row modal */}
@@ -142,12 +148,12 @@ export default function App() {
       <Modal opened={importOpen} onClose={() => setImportOpen(false)} title="Import Accounts">
         <Stack>
           <Textarea
-            label="Paste CSV (source_user,password,gmail) — comma or tab separated"
             autosize
             minRows={8}
             value={importText}
             onChange={(e) => setImportText(e.currentTarget.value)}
             placeholder={"source_user,password,gmail\nalice,secret1,alice@gmail.com\nbob,secret2,bob@gmail.com"}
+            styles={{ input: { fontFamily: "var(--mantine-font-family-monospace)" } }}
           />
           <Button loading={doImport.isPending} onClick={() => doImport.mutate()}>
             Import

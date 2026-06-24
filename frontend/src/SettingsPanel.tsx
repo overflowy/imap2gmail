@@ -17,12 +17,26 @@ import { api, qk, type Settings } from "./api";
 
 export function SettingsPanel({ notify }: { notify: (color: string, msg: string) => void }) {
   const { data } = useQuery({ queryKey: qk.settings, queryFn: api.getSettings });
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem("imap2gmail:settingsOpen") !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [form, setForm] = useState<Settings | null>(null);
 
   useEffect(() => {
     if (data) setForm(data);
   }, [data]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("imap2gmail:settingsOpen", String(open));
+    } catch {
+      /* ignore quota / disabled storage */
+    }
+  }, [open]);
 
   const save = useMutation({
     mutationFn: (s: Settings) => api.saveSettings(s),
