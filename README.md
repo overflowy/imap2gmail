@@ -2,11 +2,13 @@
 
 A self-contained mass-migrations orchestrator for [imapsync](https://imapsync.lamiral.info/).
 
+<img width="2402" height="1928" alt="app" src="https://github.com/user-attachments/assets/4f0f7145-2837-4e99-8632-d386cfb2f44c" />
+
 Run one binary, open the browser, add dozens of source mailboxes, authorize each destination Gmail once, and sync them in parallel with live per-account logs.
 
 ## Why
 
-TL;DR: I got frustrated with the Google Import Tool. It sucks. It's slow, completely opaque, and doesn't even work properly.
+TL;DR: As a Google Admin, I got frustrated with the Google Import Tool. It sucks. It's slow, completely opaque, and doesn't even work properly.
 
 ## Features
 
