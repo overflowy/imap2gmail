@@ -27,13 +27,15 @@ tasks:
 
   copy:
     desc: Copy the frontend build into the Go embed dir
+    deps: [frontend]
     cmds:
+      - rm -rf {{.EMBED_DIST}}
       - mkdir -p {{.EMBED_DIST}}
       - cp -R {{.FRONTEND_DIST}}/. {{.EMBED_DIST}}/
 
   build:
     desc: Build the self-contained binary
-    deps: [gen, frontend, copy]
+    deps: [gen, copy]
     dir: api
     cmds:
       - go build -o ../imap2gmail .
