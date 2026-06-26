@@ -263,10 +263,10 @@ func (r *Runner) syncAccount(runCtx context.Context, accountID int64) {
 		r.mu.Lock()
 		r.active[accountID] = cmd
 		r.mu.Unlock()
-	}, func(line string) {
+	}, func(line string, rssBytes int64) {
 		r.deps.Bus.Publish(events.Event{
 			Type: "log", AccountID: accountID, SourceUser: sourceUser,
-			OperationID: opID, Line: line, Timestamp: nowRFC3339(),
+			OperationID: opID, Line: line, RSSBytes: rssBytes, Timestamp: nowRFC3339(),
 		})
 	})
 

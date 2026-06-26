@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"imap2gmail/internal/csvimport"
+	appdb "imap2gmail/internal/db"
 	"imap2gmail/internal/db/gen"
 	"imap2gmail/internal/events"
 	"imap2gmail/internal/flags"
@@ -28,6 +29,7 @@ type settingsDTO struct {
 	OriginPort    int    `json:"origin_port"`
 	OriginSsl     bool   `json:"origin_ssl"`
 	ImapsyncFlags string `json:"imapsync_flags"`
+	DefaultFlags  string `json:"default_imapsync_flags"`
 	MaxConcurrent int    `json:"max_concurrent"`
 	DryRun        bool   `json:"dry_run"`
 	RedirectURL   string `json:"redirect_url"` // derived, read-only
@@ -49,6 +51,7 @@ type accountDTO struct {
 type operationDTO struct {
 	AccountID   int64  `json:"account_id"`
 	OperationID string `json:"operation_id"`
+	RSSBytes    int64  `json:"rss_bytes,omitempty"`
 }
 
 // --- Settings ---------------------------------------------------------------
@@ -104,8 +107,9 @@ func toSettingsDTO(s gen.Setting) settingsDTO {
 		ClientID: s.ClientID, ClientSecret: s.ClientSecret,
 		BindPort: int(s.BindPort), OriginHost: s.OriginHost,
 		OriginPort: int(s.OriginPort), OriginSsl: s.OriginSsl,
-		ImapsyncFlags: s.ImapsyncFlags, MaxConcurrent: int(s.MaxConcurrent),
-		DryRun: s.DryRun, RedirectURL: google.RedirectURL(int(s.BindPort)),
+		ImapsyncFlags: s.ImapsyncFlags, DefaultFlags: appdb.DefaultImapsyncFlags,
+		MaxConcurrent: int(s.MaxConcurrent),
+		DryRun:        s.DryRun, RedirectURL: google.RedirectURL(int(s.BindPort)),
 	}
 }
 
@@ -497,8 +501,9 @@ func (s *Server) listOperations(w http.ResponseWriter, r *http.Request) {
 	}
 	ops := []operationDTO{}
 	for _, acc := range accounts {
-		for _, op := range listOpsForAccount(s.paths.AccountLogDir(acc.SourceUser)) {
-			ops = append(ops, operationDTO{AccountID: acc.ID, OperationID: op})
+		dir := s.paths.AccountLogDir(acc.SourceUser)
+		for _, op := range listOpsForAccount(dir) {
+			ops = append(ops, operationDTO{AccountID: acc.ID, OperationID: op, RSSBytes: readOperationRSS(dir, op)})
 		}
 	}
 	sort.Slice(ops, func(i, j int) bool { return ops[i].OperationID > ops[j].OperationID })
@@ -528,6 +533,18 @@ func listOpsForAccount(dir string) []string {
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(ops)))
 	return ops
+}
+
+func readOperationRSS(dir, op string) int64 {
+	data, err := os.ReadFile(filepath.Join(dir, op+".rss"))
+	if err != nil {
+		return 0
+	}
+	rss, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil || rss <= 0 {
+		return 0
+	}
+	return rss
 }
 
 // --- Helpers ----------------------------------------------------------------

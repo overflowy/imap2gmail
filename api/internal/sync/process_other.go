@@ -2,7 +2,10 @@
 
 package sync
 
-import "os/exec"
+import (
+	"os"
+	"os/exec"
+)
 
 // setProcessGroup is a no-op on non-Unix platforms (no process-group support);
 // the default per-process kill is used.
@@ -14,4 +17,9 @@ func killGroup(cmd *exec.Cmd) {
 		return
 	}
 	_ = cmd.Process.Kill()
+}
+
+// signalInfo is a no-op on non-Unix platforms (no syscall.WaitStatus).
+func signalInfo(ps *os.ProcessState) (signaled bool, sigName string) {
+	return false, ""
 }

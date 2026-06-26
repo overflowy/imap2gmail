@@ -3,6 +3,7 @@
 package sync
 
 import (
+	"os"
 	"os/exec"
 	"syscall"
 )
@@ -26,4 +27,22 @@ func killGroup(cmd *exec.Cmd) {
 	// Negative PID signals the process group whose ID == -pid (the child's,
 	// since Setpgid made it a leader with pgid == pid).
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+}
+
+// signalInfo reports whether the process was terminated by a signal and, if so,
+// the signal name (e.g. "killed" for SIGKILL, "terminated" for SIGTERM). Used
+// to distinguish an external kill (e.g. the OS out-of-memory killer) from a
+// normal non-zero exit.
+func signalInfo(ps *os.ProcessState) (signaled bool, sigName string) {
+	if ps == nil {
+		return false, ""
+	}
+	ws, ok := ps.Sys().(syscall.WaitStatus)
+	if !ok {
+		return false, ""
+	}
+	if !ws.Signaled() {
+		return false, ""
+	}
+	return true, ws.Signal().String()
 }

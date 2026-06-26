@@ -11,7 +11,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"imap2gmail/internal/db/gen"
@@ -59,7 +62,7 @@ func BuildArgv(s gen.Setting, account gen.Account, tokenFile string) ([]string, 
 // Run executes imapsync, streaming combined stdout/stderr line-by-line to onLine
 // and appending to logPath. register is called with the started *exec.Cmd so the
 // runner can kill it on Stop. Returns the cmd error (nil on success).
-func Run(ctx context.Context, argv []string, logPath string, register func(*exec.Cmd), onLine func(string)) error {
+func Run(ctx context.Context, argv []string, logPath string, register func(*exec.Cmd), onLine func(string, int64)) error {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	// Put the child in its own process group so Stop can kill it + any forked
 	// helpers (see process_unix.go), and bound I/O reaping so a stray child
@@ -83,20 +86,103 @@ func Run(ctx context.Context, argv []string, logPath string, register func(*exec
 	}
 	register(cmd)
 
+	// Sample the child's resident set size every second. Logs stay as raw
+	// imapsync output; RSS is reported separately for UI metadata and diagnosis.
+	var rss atomic.Int64
+	var maxRSS atomic.Int64
+	if cmd.Process != nil {
+		mem := processRSS(cmd.Process.Pid)
+		rss.Store(mem)
+		recordMaxRSS(&maxRSS, logPath, mem)
+	}
+	memDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-memDone:
+				return
+			case <-ticker.C:
+				if cmd.Process != nil {
+					mem := processRSS(cmd.Process.Pid)
+					rss.Store(mem)
+					recordMaxRSS(&maxRSS, logPath, mem)
+				}
+			}
+		}
+	}()
+
 	var sw sync.WaitGroup
 	sw.Go(func() {
 		scanner := bufio.NewScanner(r)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		for scanner.Scan() {
 			line := scanner.Text()
+			mem := rss.Load()
 			_, _ = f.WriteString(line + "\n")
-			onLine(line)
+			onLine(line, mem)
 		}
 	})
 
 	err = cmd.Wait()
+	close(memDone)
 	w.Close()
 	sw.Wait()
 	f.Close()
+	if err != nil && ctx.Err() == nil {
+		err = enrichFailure(cmd.ProcessState, err)
+	}
 	return err
+}
+
+func recordMaxRSS(maxRSS *atomic.Int64, logPath string, rss int64) {
+	if rss <= 0 {
+		return
+	}
+	for {
+		cur := maxRSS.Load()
+		if rss <= cur {
+			return
+		}
+		if maxRSS.CompareAndSwap(cur, rss) {
+			_ = os.WriteFile(rssPath(logPath), []byte(strconv.FormatInt(rss, 10)+"\n"), 0o600)
+			return
+		}
+	}
+}
+
+func rssPath(logPath string) string {
+	return strings.TrimSuffix(logPath, ".log") + ".rss"
+}
+
+// enrichFailure augments a non-app-cancelled imapsync failure with signal info.
+// imapsync output is already streamed and recorded in the operation log.
+func enrichFailure(ps *os.ProcessState, err error) error {
+	var b strings.Builder
+	b.WriteString(err.Error())
+	signaled, sig := signalInfo(ps)
+	switch {
+	case signaled && sig == "killed":
+		b.WriteString(" — killed by SIGKILL; check system logs for the cause (on macOS, memorystatus/no paging space records indicate an OS memory-pressure kill)")
+	case signaled:
+		fmt.Fprintf(&b, " — killed by signal %s", sig)
+	}
+	return fmt.Errorf("%s", b.String())
+}
+
+// processRSS returns the resident set size (in bytes) of the process with the
+// given pid, or 0 if it cannot be determined. It shells out to ps (available on
+// macOS and Linux), which reports RSS in KiB. The whole process group is not
+// summed; imapsync's perl process holds the bulk of the memory.
+func processRSS(pid int) int64 {
+	out, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return 0
+	}
+	kb, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
+	if err != nil || kb <= 0 {
+		return 0
+	}
+	return kb * 1024
 }

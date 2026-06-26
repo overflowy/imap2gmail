@@ -125,7 +125,7 @@ func TestStopKillsGroupAndMarksStopped(t *testing.T) {
 			r.mu.Lock()
 			r.active[acc.ID] = cmd
 			r.mu.Unlock()
-		}, func(line string) {
+		}, func(line string, rssBytes int64) {
 			gotLines.Add(1)
 		})
 	}()

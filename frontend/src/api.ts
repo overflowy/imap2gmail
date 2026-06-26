@@ -11,6 +11,7 @@ export type Settings = {
   origin_port: number;
   origin_ssl: boolean;
   imapsync_flags: string;
+  default_imapsync_flags: string;
   max_concurrent: number;
   dry_run: boolean;
   redirect_url: string;
@@ -29,7 +30,7 @@ export type Account = {
   duplicate: boolean;
 };
 
-export type Operation = { account_id: number; operation_id: string };
+export type Operation = { account_id: number; operation_id: string; rss_bytes?: number };
 
 function csrfToken(): string {
   const m = document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/);

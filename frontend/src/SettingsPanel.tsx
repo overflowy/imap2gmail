@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Alert,
+  Anchor,
   Button,
   Collapse,
   Group,
@@ -92,7 +93,24 @@ export function SettingsPanel({ notify }: { notify: (color: string, msg: string)
             />
           </Group>
           <Textarea
-            label="imapsync flags (global)"
+            label={
+              <Group justify="space-between" align="center" gap="xs" wrap="nowrap">
+                <span>imapsync flags (global)</span>
+                <Anchor
+                  component="button"
+                  type="button"
+                  size="xs"
+                  c="dimmed"
+                  onClick={() =>
+                    set({
+                      imapsync_flags: form.default_imapsync_flags,
+                    })
+                  }
+                >
+                  reset
+                </Anchor>
+              </Group>
+            }
             autosize
             minRows={2}
             value={form.imapsync_flags}

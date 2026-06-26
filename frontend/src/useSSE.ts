@@ -8,6 +8,7 @@ type SSEEvent = {
   source_user?: string;
   operation_id?: string;
   line?: string;
+  rss_bytes?: number;
   status?: string;
   reason?: string;
   dest_gmail?: string;
@@ -19,7 +20,7 @@ type SSEEvent = {
  * events so the table and operation selector stay in sync without polling.
  */
 export function useSSE(
-  onLog: (accountId: number, operationId: string, line: string) => void,
+  onLog: (accountId: number, operationId: string, line: string, rssBytes?: number) => void,
   onOperation?: (accountId: number, operationId: string) => void,
 ) {
   const qc = useQueryClient();
@@ -34,7 +35,7 @@ export function useSSE(
       switch (ev.type) {
         case "log":
           if (ev.operation_id && ev.line != null && ev.account_id != null) {
-            onLogRef.current(ev.account_id, ev.operation_id, ev.line);
+            onLogRef.current(ev.account_id, ev.operation_id, ev.line, ev.rss_bytes);
           }
           break;
         case "status":

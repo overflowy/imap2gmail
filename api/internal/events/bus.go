@@ -15,6 +15,7 @@ type Event struct {
 	DestGmail   string `json:"dest_gmail,omitempty"`   // auth-ok: destination that gained tokens
 	OperationID string `json:"operation_id,omitempty"` // RFC3339 ts identifying the run
 	Line        string `json:"line,omitempty"`         // log: an imapsync output line
+	RSSBytes    int64  `json:"rss_bytes,omitempty"`    // log/operation: peak child RSS in bytes
 	Status      string `json:"status,omitempty"`       // status: idle|running|ok|failed|skipped|stopped
 	Reason      string `json:"reason,omitempty"`       // status: why it was skipped/failed
 	Timestamp   string `json:"timestamp,omitempty"`    // RFC3339

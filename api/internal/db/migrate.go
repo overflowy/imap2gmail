@@ -13,7 +13,7 @@ var schemaSQL string
 // Migrate applies the schema (idempotent CREATE TABLE IF NOT EXISTS) and ensures
 // the singleton settings row (id = 1) exists.
 func Migrate(ctx context.Context, d *sql.DB) error {
-	for _, stmt := range splitStatements(schemaSQL) {
+	for _, stmt := range splitStatements(renderSchema(schemaSQL)) {
 		if _, err := d.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
@@ -23,6 +23,14 @@ func Migrate(ctx context.Context, d *sql.DB) error {
 		return err
 	}
 	return nil
+}
+
+func renderSchema(s string) string {
+	return strings.ReplaceAll(s, "'__DEFAULT_IMAPSYNC_FLAGS__'", sqlString(DefaultImapsyncFlags))
+}
+
+func sqlString(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 // splitStatements breaks a SQL script into individual statements, ignoring
