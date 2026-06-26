@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Anchor,
@@ -17,6 +17,7 @@ import {
 import { api, qk, type Settings } from "./api";
 
 export function SettingsPanel({ notify }: { notify: (color: string, msg: string) => void }) {
+  const qc = useQueryClient();
   const { data } = useQuery({ queryKey: qk.settings, queryFn: api.getSettings });
   const [open, setOpen] = useState(() => {
     try {
@@ -41,7 +42,10 @@ export function SettingsPanel({ notify }: { notify: (color: string, msg: string)
 
   const save = useMutation({
     mutationFn: (s: Settings) => api.saveSettings(s),
-    onSuccess: () => notify("green", "Settings saved"),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.settings });
+      notify("green", "Settings saved");
+    },
     onError: (e: Error) => notify("red", e.message),
   });
 

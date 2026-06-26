@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useReducer, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -19,58 +19,113 @@ import { OutputPane } from "./OutputPane";
 
 type Notice = { color: string; msg: string };
 
+type AppState = {
+  notice: Notice | null;
+  addOpen: boolean;
+  importOpen: boolean;
+  importText: string;
+  addForm: { source_user: string; source_password: string; dest_gmail: string };
+  syncSelect: { accountId: number; token: number } | null;
+};
+
+type AppAction =
+  | { type: "notice"; notice: Notice | null }
+  | { type: "addOpen"; open: boolean }
+  | { type: "importOpen"; open: boolean }
+  | { type: "importText"; text: string }
+  | { type: "addForm"; patch: Partial<AppState["addForm"]> }
+  | { type: "resetAddForm" }
+  | { type: "syncSelect"; value: AppState["syncSelect"] };
+
+const emptyAddForm = { source_user: "", source_password: "", dest_gmail: "" };
+const oauthCallbackNotice = readOAuthCallbackNotice();
+
+function readOAuthCallbackNotice(): Notice | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const auth = params.get("auth");
+  if (!auth) return null;
+  window.history.replaceState({}, "", "/");
+  if (auth === "ok") return { color: "green", msg: "Gmail authenticated successfully" };
+  if (auth === "err") return { color: "red", msg: "Authentication failed: " + (params.get("info") || "unknown error") };
+  return null;
+}
+
+function reducer(state: AppState, action: AppAction): AppState {
+  switch (action.type) {
+    case "notice":
+      return { ...state, notice: action.notice };
+    case "addOpen":
+      return { ...state, addOpen: action.open };
+    case "importOpen":
+      return { ...state, importOpen: action.open };
+    case "importText":
+      return { ...state, importText: action.text };
+    case "addForm":
+      return { ...state, addForm: { ...state.addForm, ...action.patch } };
+    case "resetAddForm":
+      return { ...state, addForm: emptyAddForm };
+    case "syncSelect":
+      return { ...state, syncSelect: action.value };
+  }
+}
+
 export default function App() {
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   const { data: accounts } = useQuery({ queryKey: qk.accounts, queryFn: api.listAccounts });
   const running = (accounts || []).some((a) => a.last_status === "running");
 
-  const [notice, setNotice] = useState<Notice | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const [importText, setImportText] = useState("");
-  const [addForm, setAddForm] = useState({ source_user: "", source_password: "", dest_gmail: "" });
-  const [syncSelect, setSyncSelect] = useState<{ accountId: number; token: number } | null>(null);
+  const [state, dispatch] = useReducer(reducer, undefined, () => ({
+    notice: oauthCallbackNotice,
+    addOpen: false,
+    importOpen: false,
+    importText: "",
+    addForm: emptyAddForm,
+    syncSelect: null,
+  }));
+  // Monotonic token so re-syncing the same account still retriggers the
+  // OutputPane auto-selection behavior (a fresh value each click).
+  const syncTokenRef = useRef(0);
 
   const notify = (color: string, msg: string) => {
-    setNotice({ color, msg });
-    window.setTimeout(() => setNotice(null), 4000);
+    dispatch({ type: "notice", notice: { color, msg } });
+    window.setTimeout(() => dispatch({ type: "notice", notice: null }), 4000);
   };
-
-  // OAuth callback feedback (?auth=ok|err set by the redirect).
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const auth = params.get("auth");
-    if (auth === "ok") notify("green", "Gmail authenticated successfully");
-    else if (auth === "err") notify("red", "Authentication failed: " + (params.get("info") || "unknown error"));
-    if (auth) window.history.replaceState({}, "", "/");
-  }, []);
 
   const syncAll = useMutation({
     mutationFn: api.syncAll,
-    onSuccess: (d) => notify("green", `Sync started: ${d.queued} queued, ${d.skipped} skipped`),
+    onSuccess: (d) => {
+      queryClient.invalidateQueries({ queryKey: qk.accounts });
+      queryClient.invalidateQueries({ queryKey: qk.operations });
+      notify("green", `Sync started: ${d.queued} queued, ${d.skipped} skipped`);
+    },
     onError: (e: Error) => notify("red", e.message),
   });
   const stop = useMutation({
     mutationFn: api.stop,
-    onSuccess: () => notify("orange", "Stopping all active syncs…"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk.accounts });
+      queryClient.invalidateQueries({ queryKey: qk.operations });
+      notify("orange", "Stopping all active syncs...");
+    },
     onError: (e: Error) => notify("red", e.message),
   });
   const addAccount = useMutation({
-    mutationFn: () => api.addAccount(addForm),
+    mutationFn: () => api.addAccount(state.addForm),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.accounts });
-      setAddOpen(false);
-      setAddForm({ source_user: "", source_password: "", dest_gmail: "" });
+      queryClient.invalidateQueries({ queryKey: qk.accounts });
+      dispatch({ type: "addOpen", open: false });
+      dispatch({ type: "resetAddForm" });
       notify("green", "Account added");
     },
     onError: (e: Error) => notify("red", e.message),
   });
   const doImport = useMutation({
-    mutationFn: () => api.importAccounts(importText),
+    mutationFn: () => api.importAccounts(state.importText),
     onSuccess: (d) => {
-      qc.invalidateQueries({ queryKey: qk.accounts });
-      setImportOpen(false);
-      setImportText("");
+      queryClient.invalidateQueries({ queryKey: qk.accounts });
+      dispatch({ type: "importOpen", open: false });
+      dispatch({ type: "importText", text: "" });
       notify("green", `Imported ${d.imported} account${d.imported === 1 ? "" : "s"}${d.skipped ? `, skipped ${d.skipped}` : ""}`);
     },
     onError: (e: Error) => notify("red", e.message),
@@ -88,7 +143,7 @@ export default function App() {
               disabled={running}
               onClick={() => {
                 const first = (accounts || []).find((a) => a.sync_checked && !a.duplicate);
-                if (first) setSyncSelect({ accountId: first.id, token: Date.now() });
+                if (first) dispatch({ type: "syncSelect", value: { accountId: first.id, token: ++syncTokenRef.current } });
                 syncAll.mutate();
               }}
             >
@@ -100,9 +155,9 @@ export default function App() {
           </Group>
         </Group>
 
-        {notice && (
-          <Alert color={notice.color} withCloseButton onClose={() => setNotice(null)}>
-            {notice.msg}
+        {state.notice && (
+          <Alert color={state.notice.color} withCloseButton onClose={() => dispatch({ type: "notice", notice: null })}>
+            {state.notice.msg}
           </Alert>
         )}
 
@@ -112,31 +167,31 @@ export default function App() {
           accounts={accounts ?? []}
           running={running}
           notify={notify}
-          onAdd={() => setAddOpen(true)}
-          onImport={() => setImportOpen(true)}
-          onSyncStart={(id) => setSyncSelect({ accountId: id, token: Date.now() })}
+          onAdd={() => dispatch({ type: "addOpen", open: true })}
+          onImport={() => dispatch({ type: "importOpen", open: true })}
+          onSyncStart={(id) => dispatch({ type: "syncSelect", value: { accountId: id, token: ++syncTokenRef.current } })}
         />
 
-        <OutputPane accounts={accounts ?? []} syncSelect={syncSelect} />
+        <OutputPane accounts={accounts ?? []} syncSelect={state.syncSelect} />
       </Stack>
 
       {/* Add Row modal */}
-      <Modal opened={addOpen} onClose={() => setAddOpen(false)} title="Add Account">
+      <Modal opened={state.addOpen} onClose={() => dispatch({ type: "addOpen", open: false })} title="Add Account">
         <Stack>
           <TextInput
             label="Source User"
-            value={addForm.source_user}
-            onChange={(e) => setAddForm({ ...addForm, source_user: e.currentTarget.value })}
+            value={state.addForm.source_user}
+            onChange={(e) => dispatch({ type: "addForm", patch: { source_user: e.currentTarget.value } })}
           />
           <PasswordInput
             label="Source Password"
-            value={addForm.source_password}
-            onChange={(e) => setAddForm({ ...addForm, source_password: e.currentTarget.value })}
+            value={state.addForm.source_password}
+            onChange={(e) => dispatch({ type: "addForm", patch: { source_password: e.currentTarget.value } })}
           />
           <TextInput
             label="Destination Gmail"
-            value={addForm.dest_gmail}
-            onChange={(e) => setAddForm({ ...addForm, dest_gmail: e.currentTarget.value })}
+            value={state.addForm.dest_gmail}
+            onChange={(e) => dispatch({ type: "addForm", patch: { dest_gmail: e.currentTarget.value } })}
           />
           <Button loading={addAccount.isPending} onClick={() => addAccount.mutate()}>
             Add
@@ -145,13 +200,13 @@ export default function App() {
       </Modal>
 
       {/* Import modal */}
-      <Modal opened={importOpen} onClose={() => setImportOpen(false)} title="Import Accounts">
+      <Modal opened={state.importOpen} onClose={() => dispatch({ type: "importOpen", open: false })} title="Import Accounts">
         <Stack>
           <Textarea
             autosize
             minRows={8}
-            value={importText}
-            onChange={(e) => setImportText(e.currentTarget.value)}
+            value={state.importText}
+            onChange={(e) => dispatch({ type: "importText", text: e.currentTarget.value })}
             placeholder={"source_user,password,gmail\nalice,secret1,alice@gmail.com\nbob,secret2,bob@gmail.com"}
             styles={{ input: { fontFamily: "var(--mantine-font-family-monospace)" } }}
           />

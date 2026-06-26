@@ -57,40 +57,41 @@ export function AccountsTable({
   onImport: () => void;
   onSyncStart: (id: number) => void;
 }) {
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
   const [authModal, setAuthModal] = useState<{ url: string; accountId: number } | null>(null);
   const [pasteCode, setPasteCode] = useState("");
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: qk.accounts });
-
   const setChecked = useMutation({
     mutationFn: (p: { id: number; checked: boolean }) => api.setChecked(p.id, p.checked),
-    onSuccess: invalidate,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.accounts }),
     onError: (e: Error) => notify("red", e.message),
   });
   const update = useMutation({
     mutationFn: (p: { id: number; a: Draft }) => api.updateAccount(p.id, p.a),
     onSuccess: () => {
-      invalidate();
+      queryClient.invalidateQueries({ queryKey: qk.accounts });
       notify("green", "Account saved");
     },
     onError: (e: Error) => notify("red", e.message),
   });
   const del = useMutation({
     mutationFn: (id: number) => api.deleteAccount(id),
-    onSuccess: invalidate,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.accounts }),
     onError: (e: Error) => notify("red", e.message),
   });
   const auth = useMutation({
     mutationFn: (id: number) => api.authURL(id),
-    onSuccess: (d, id) => setAuthModal({ url: d.auth_url, accountId: id }),
+    onSuccess: (d, id) => {
+      queryClient.invalidateQueries({ queryKey: qk.accounts });
+      setAuthModal({ url: d.auth_url, accountId: id });
+    },
     onError: (e: Error) => notify("red", e.message),
   });
   const exchange = useMutation({
     mutationFn: () => api.authExchange(authModal!.accountId, pasteCode),
     onSuccess: () => {
-      invalidate();
+      queryClient.invalidateQueries({ queryKey: qk.accounts });
       setAuthModal(null);
       setPasteCode("");
       notify("green", "Tokens exchanged");
@@ -99,11 +100,21 @@ export function AccountsTable({
   });
   const syncOne = useMutation({
     mutationFn: (id: number) => api.syncOne(id),
-    onSuccess: () => notify("green", "Sync queued"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk.accounts });
+      queryClient.invalidateQueries({ queryKey: qk.operations });
+      notify("green", "Sync queued");
+    },
     onError: (e: Error) => notify("red", e.message),
   });
-  const checkAll = useMutation({ mutationFn: api.checkAll, onSuccess: invalidate });
-  const checkNone = useMutation({ mutationFn: api.checkNone, onSuccess: invalidate });
+  const checkAll = useMutation({
+    mutationFn: api.checkAll,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.accounts }),
+  });
+  const checkNone = useMutation({
+    mutationFn: api.checkNone,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.accounts }),
+  });
 
   const startEdit = (a: Account) =>
     setDrafts((d) => ({

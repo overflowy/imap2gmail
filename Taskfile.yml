@@ -53,3 +53,9 @@ tasks:
       - go fix ./...
       - go vet ./...
       - gofmt -w .
+
+  doctor:
+    desc: Run React Doctor
+    dir: frontend
+    cmds:
+      - npx -y react-doctor@latest . -y --no-dead-code --verbose

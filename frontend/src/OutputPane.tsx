@@ -40,17 +40,34 @@ export function OutputPane({
   const { data: ops } = useQuery({ queryKey: qk.operations, queryFn: api.listOperations });
   const [logs, setLogs] = useState<LogMap>({});
   const [rssByKey, setRssByKey] = useState<RssMap>({});
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
   const programmaticFollowRef = useRef(false);
+  const renderedLogRef = useRef({ selected: null as string | null, version: "" });
   // When a sync is started, auto-select the target account's next operation log
   // once its "operation" event arrives.
   const autoSelectAccountId = useRef<number | null>(null);
+  const lastSyncSelectTokenRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (syncSelect) autoSelectAccountId.current = syncSelect.accountId;
-  }, [syncSelect]);
+  if (syncSelect && syncSelect.token !== lastSyncSelectTokenRef.current) {
+    autoSelectAccountId.current = syncSelect.accountId;
+    lastSyncSelectTokenRef.current = syncSelect.token;
+  }
+
+  const resetScroll = (behavior: ScrollBehavior = "auto") => {
+    atBottomRef.current = true;
+    programmaticFollowRef.current = behavior === "smooth";
+    requestAnimationFrame(() => {
+      const el = viewportRef.current;
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior });
+    });
+  };
+
+  const selectOperation = (key: string | null, behavior: ScrollBehavior = "auto") => {
+    setSelectedKey(key);
+    resetScroll(behavior);
+  };
 
   // Single global SSE connection: append live log lines + invalidate caches.
   useSSE(
@@ -64,18 +81,10 @@ export function OutputPane({
     (accountId, operationId) => {
       if (autoSelectAccountId.current === accountId) {
         autoSelectAccountId.current = null;
-        setSelected(opKey(accountId, operationId));
+        selectOperation(opKey(accountId, operationId));
       }
     },
   );
-
-  const resetScroll = (behavior: ScrollBehavior = "auto") => {
-    atBottomRef.current = true;
-    programmaticFollowRef.current = behavior === "smooth";
-    const el = viewportRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior });
-  };
 
   const pauseAutoFollow = () => {
     atBottomRef.current = false;
@@ -114,44 +123,15 @@ export function OutputPane({
     .filter((o) => (seen.has(o.key) ? false : (seen.add(o.key), true)))
     .sort((a, b) => b.opId.localeCompare(a.opId));
 
-  useEffect(() => {
-    if (!selected && merged.length > 0) setSelected(merged[0].key);
-  }, [merged.length, selected]);
-
-  // Load historical log for a newly selected operation not yet in live state.
-  useEffect(() => {
-    if (!selected || logs[selected] !== undefined) return;
-    const [aidStr, oid] = selected.split("|");
-    const aid = Number(aidStr);
-    let cancelled = false;
-    api
-      .getAccountLog(aid, oid)
-      .then((d) => {
-        if (!cancelled && d?.content != null) {
-          setLogs((prev) => ({ ...prev, [selected]: d.content.split("\n").map(stripRSS) }));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setLogs((prev) => ({ ...prev, [selected]: [] }));
-      });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected]);
-
-  // Jump to the bottom when the user picks a different operation.
-  useEffect(() => {
-    resetScroll();
-  }, [selected]);
-
-  // Follow live output only while explicitly pinned to the bottom. User scrolls
-  // away from the bottom pause following until the title link is clicked.
-  useEffect(() => {
-    if (!atBottomRef.current) return;
-    const el = viewportRef.current;
-    if (el) requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }));
-  }, [logs]);
+  const selected = selectedKey && merged.some((o) => o.key === selectedKey) ? selectedKey : merged[0]?.key ?? null;
+  const selectedParts = selected?.split("|");
+  const selectedAccountId = selectedParts ? Number(selectedParts[0]) : null;
+  const selectedOperationId = selectedParts?.[1] ?? null;
+  const { data: historicalLog } = useQuery({
+    queryKey: ["account-log", selected],
+    queryFn: () => api.getAccountLog(selectedAccountId!, selectedOperationId!),
+    enabled: selected !== null && logs[selected] === undefined && selectedAccountId !== null && selectedOperationId !== null,
+  });
 
   // Attribute each account's live last_status to its most recent log entry.
   // operation_ids are RFC3339 timestamps, so the lexicographic max per account
@@ -181,7 +161,8 @@ export function OutputPane({
   const rssForKey = (key: string) => rssByKey[key] || persistedRssByKey.get(key) || 0;
   const selectedRSS = selected ? formatRSS(rssForKey(selected)) : "";
 
-  const lines = selected ? logs[selected] || [] : [];
+  const lines = selected ? logs[selected] ?? historicalLog?.content.split("\n").map(stripRSS) ?? [] : [];
+  const logVersion = `${lines.length}|${lines[lines.length - 1] ?? ""}`;
   const options = merged.map((o) => ({
     value: o.key,
     label: `${accountMap.get(o.accountId) || "#" + o.accountId} — ${o.opId}`,
@@ -207,7 +188,7 @@ export function OutputPane({
         placeholder="Select a log"
         data={options}
         value={selected}
-        onChange={setSelected}
+        onChange={(key) => selectOperation(key)}
         searchable
         rightSection={
           selectedRSS ? (
@@ -285,6 +266,21 @@ export function OutputPane({
           }}
         >
           <pre
+            ref={(node) => {
+              if (!node) return;
+              const previous = renderedLogRef.current;
+              const selectionChanged = previous.selected !== selected;
+              const contentChanged = previous.version !== logVersion;
+              renderedLogRef.current = { selected, version: logVersion };
+              if (!selectionChanged && (!contentChanged || !atBottomRef.current)) return;
+
+              atBottomRef.current = true;
+              programmaticFollowRef.current = false;
+              requestAnimationFrame(() => {
+                const el = viewportRef.current;
+                if (el) el.scrollTo({ top: el.scrollHeight, behavior: selectionChanged ? "auto" : "smooth" });
+              });
+            }}
             style={{
               margin: 0,
               fontFamily: "var(--mantine-font-family-monospace)",
