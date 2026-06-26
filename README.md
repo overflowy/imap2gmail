@@ -124,8 +124,7 @@ The global imapsync flag string is tokenized with `shlex` (never a shell) and va
 ## Third-party software
 
 This project invokes `imapsync` as an external program. `imapsync` is not part of this
-project’s license unless explicitly included in this repository. See the imapsync project
-for its own license terms.
+project’s license. See the imapsync project for its own license terms.
 
 ## License
 
