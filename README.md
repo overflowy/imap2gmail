@@ -1,6 +1,6 @@
 # imap2gmail
 
-A self-contained mass-migrations orchestrator for [imapsync](https://imapsync.lamiral.info/).
+A self-contained mass-migrations orchestrator for Gmail.
 
 <img width="2402" height="1928" alt="app" src="https://github.com/user-attachments/assets/4f0f7145-2837-4e99-8632-d386cfb2f44c" />
 
