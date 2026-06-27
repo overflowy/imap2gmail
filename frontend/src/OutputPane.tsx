@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Anchor, Box, Group, Indicator, Paper, ScrollArea, Select, Text } from "@mantine/core";
 import { api, qk, type Account } from "./api";
+import { mergeHistoricalAndLiveLines, splitLogContent, stripRSS } from "./logLines";
 import { useSSE } from "./useSSE";
 
 type LogMap = Record<string, string[]>;
@@ -10,10 +11,6 @@ const LOG_HEIGHT = 550;
 
 function opKey(accountId: number, operationId: string) {
   return `${accountId}|${operationId}`;
-}
-
-function stripRSS(line: string) {
-  return line.replace(/\s+\[RSS [^\]]+\]$/, "");
 }
 
 function formatRSS(bytes?: number) {
@@ -127,10 +124,11 @@ export function OutputPane({
   const selectedParts = selected?.split("|");
   const selectedAccountId = selectedParts ? Number(selectedParts[0]) : null;
   const selectedOperationId = selectedParts?.[1] ?? null;
+  const persistedSelected = selected !== null && (ops || []).some((o) => opKey(o.account_id, o.operation_id) === selected);
   const { data: historicalLog } = useQuery({
     queryKey: ["account-log", selected],
     queryFn: () => api.getAccountLog(selectedAccountId!, selectedOperationId!),
-    enabled: selected !== null && logs[selected] === undefined && selectedAccountId !== null && selectedOperationId !== null,
+    enabled: persistedSelected && selectedAccountId !== null && selectedOperationId !== null,
   });
 
   // Attribute each account's live last_status to its most recent log entry.
@@ -161,7 +159,9 @@ export function OutputPane({
   const rssForKey = (key: string) => rssByKey[key] || persistedRssByKey.get(key) || 0;
   const selectedRSS = selected ? formatRSS(rssForKey(selected)) : "";
 
-  const lines = selected ? logs[selected] ?? historicalLog?.content.split("\n").map(stripRSS) ?? [] : [];
+  const lines = selected
+    ? mergeHistoricalAndLiveLines(historicalLog ? splitLogContent(historicalLog.content) : [], logs[selected] ?? [])
+    : [];
   const logVersion = `${lines.length}|${lines[lines.length - 1] ?? ""}`;
   const options = merged.map((o) => ({
     value: o.key,
