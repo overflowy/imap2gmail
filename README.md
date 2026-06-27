@@ -128,12 +128,4 @@ project’s license. See the imapsync project for its own license terms.
 
 ## License
 
-This project is licensed under the **PolyForm Noncommercial License 1.0.0**.
-
-You may use, copy, modify, and distribute this software for noncommercial purposes only.
-
-Commercial use is not permitted without separate written permission. This includes selling,
-reselling, sublicensing, hosting as a paid service, or including this software in a paid
-product or paid service.
-
-For commercial licensing, contact: overflowy@riseup.net
+MIT
