@@ -3,4 +3,6 @@
 dist/
 data/
 
-/imap2gmail
+
+imap2gmail
+run/
