@@ -8,7 +8,7 @@ Run one binary, open the browser, add dozens of source mailboxes, authorize each
 
 ## Why
 
-TL;DR: As a Google Admin, I got frustrated with the Google Import Tool. It sucks. It's slow, completely opaque, and doesn't even work properly.
+TL;DR: As a Google Admin, I needed a migration tool that was fast, observable, and reliable. The Google Import Tool was none of those: slow, opaque, and hard to debug when it failed.
 
 ## Features
 
@@ -52,13 +52,7 @@ This produces `imap2gmail`. The frontend is compiled via Vite and embedded into 
 
 Make sure you're running `imap2gmail` in a secure environment. Treat the environment as you would treat `.env.prod` files.
 
-The server binds `127.0.0.1:<bind_port>` (default `8080`) and opens a browser to it. All state lives under the current working directory:
-
-| Path | Contents | Perms |
-|---|---|---|
-| `data/db/data.db` | SQLite - settings, accounts, destinations, OAuth tokens | `0600` |
-| `data/logs/<source_user>/<timestamp>.log` | per-operation sync logs | `0600` |
-| `run/token-<id>.txt` | transient Gmail access-token files passed to imapsync | `0600` |
+The server binds `127.0.0.1:<bind_port>` (default `8080`) and opens a browser to it. All state lives under the current working directory.
 
 ## Configuration
 
@@ -66,7 +60,7 @@ Open the **Settings** panel in the UI (its collapse state is remembered across r
 
 | Setting | Default | Notes |
 |---|---|---|
-| OAuth Client ID / Secret | *(empty)* | Google OAuth Desktop credentials |
+| OAuth Client ID / Secret | *(empty)* | Google OAuth Web app credentials |
 | Origin Host / Port / SSL | `""` / `993` / on | Your source IMAP server |
 | Bind Port | `8080` | Loopback listen port |
 | imapsync flags | see below | Global behavior flags (validated) |
