@@ -2,7 +2,7 @@
 
 A self-contained mass-migrations orchestrator for Gmail.
 
-<img width="2402" height="1928" alt="app" src="https://github.com/user-attachments/assets/4f0f7145-2837-4e99-8632-d386cfb2f44c" />
+<img width="2104" height="1898" alt="app" src="https://github.com/user-attachments/assets/f609b6c3-a9cb-4002-977b-83ad05382988" />
 
 Run one binary, open the browser, add dozens of source mailboxes, authorize each destination Gmail once, and sync them in parallel with live per-account logs.
 
