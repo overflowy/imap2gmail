@@ -36,11 +36,15 @@ const statusColor: Record<string, string> = {
 const statusLabel: Record<string, string> = {
   idle: "Idle",
   running: "Running",
-  ok: "OK",
+  ok: "Completed",
   failed: "Failed",
   skipped: "Skipped",
   stopped: "Stopped",
 };
+
+function showAuthBadge(a: Account) {
+  return a.last_status !== "running" && a.last_status !== "stopped" && a.last_status !== "ok";
+}
 
 export function AccountsTable({
   accounts,
@@ -175,7 +179,7 @@ export function AccountsTable({
             <Table.Th>Source User</Table.Th>
             <Table.Th style={{ width: 220 }}>Source Password</Table.Th>
             <Table.Th>Destination Gmail</Table.Th>
-            <Table.Th style={{ width: 210 }}>Auth</Table.Th>
+            <Table.Th style={{ width: 210 }}>Status</Table.Th>
             <Table.Th style={{ width: 260 }}>Actions</Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -225,9 +229,11 @@ export function AccountsTable({
                 </Table.Td>
                 <Table.Td>
                   <Group gap="xs" wrap="wrap">
-                    <Badge color={a.authenticated ? "green" : "gray"} variant="light">
-                      {a.authenticated ? "Authenticated" : "Not Authenticated"}
-                    </Badge>
+                    {showAuthBadge(a) && (
+                      <Badge color={a.authenticated ? "green" : "gray"} variant="light">
+                        {a.authenticated ? "Authenticated" : "Not Authenticated"}
+                      </Badge>
+                    )}
                     <Badge color={statusColor[a.last_status] || "gray"} variant="light">
                       {statusLabel[a.last_status] || a.last_status}
                     </Badge>
