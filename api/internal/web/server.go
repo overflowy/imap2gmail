@@ -50,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/accounts/{id}/logs", s.listAccountLogs)
 	mux.HandleFunc("GET /api/accounts/{id}/log", s.getAccountLog)
+	mux.HandleFunc("DELETE /api/accounts/{id}/log", s.deleteAccountLog)
 	mux.HandleFunc("PUT /api/accounts/{id}", s.updateAccount)
 	mux.HandleFunc("DELETE /api/accounts/{id}", s.deleteAccount)
 	mux.HandleFunc("POST /api/accounts/{id}/checked", s.setChecked)
@@ -60,6 +61,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sync", s.syncAll)
 	mux.HandleFunc("POST /api/sync/stop", s.syncStop)
 	mux.HandleFunc("GET /api/operations", s.listOperations)
+	mux.HandleFunc("POST /api/logs/prune", s.pruneLogs)
 
 	mux.HandleFunc("GET /events", s.handleSSE)
 

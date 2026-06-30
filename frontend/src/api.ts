@@ -99,6 +99,11 @@ export const api = {
     apiFetch<{ operation_id: string }[]>(`/api/accounts/${id}/logs`),
   getAccountLog: (id: number, ts: string) =>
     apiFetch<{ content: string }>(`/api/accounts/${id}/log?ts=${encodeURIComponent(ts)}`),
+  deleteAccountLog: (id: number, ts: string) =>
+    apiFetch<{ ok: boolean }>(`/api/accounts/${id}/log?ts=${encodeURIComponent(ts)}`, {
+      method: "DELETE",
+    }),
+  pruneLogs: () => apiFetch<{ removed: number }>("/api/logs/prune", { method: "POST" }),
 };
 
 export const qk = {

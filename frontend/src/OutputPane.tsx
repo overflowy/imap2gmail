@@ -1,16 +1,106 @@
-import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Anchor, Box, Group, Indicator, Paper, ScrollArea, Select, Text } from "@mantine/core";
+import { useEffect, useReducer, useRef, type MutableRefObject, type RefObject } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Anchor,
+  Box,
+  Button,
+  Group,
+  Indicator,
+  Paper,
+  Popover,
+  ScrollArea,
+  Select,
+  Stack,
+  Text,
+} from "@mantine/core";
 import { api, qk, type Account } from "./api";
 import { mergeHistoricalAndLiveLines, splitLogContent, stripRSS } from "./logLines";
 import { useSSE } from "./useSSE";
 
+const LOG_HEIGHT = 550;
+
 type LogMap = Record<string, string[]>;
 type RssMap = Record<string, number>;
-const LOG_HEIGHT = 550;
+type OpStatus = "running" | "stopped" | "ok";
+type OperationEntry = { key: string; accountId: number; opId: string; rssBytes?: number };
+
+type PaneState = {
+  logs: LogMap;
+  rssByKey: RssMap;
+  selectedKey: string | null;
+  removeOpen: boolean;
+  pruneOpen: boolean;
+};
+
+type PaneAction =
+  | { type: "appendLog"; key: string; line: string }
+  | { type: "recordRSS"; key: string; rssBytes: number }
+  | { type: "select"; key: string | null }
+  | { type: "setRemoveOpen"; open: boolean }
+  | { type: "setPruneOpen"; open: boolean }
+  | { type: "removeLogSuccess"; key: string }
+  | { type: "pruneLogsSuccess" };
+
+const initialPaneState: PaneState = {
+  logs: {},
+  rssByKey: {},
+  selectedKey: null,
+  removeOpen: false,
+  pruneOpen: false,
+};
+
+function paneReducer(state: PaneState, action: PaneAction): PaneState {
+  switch (action.type) {
+    case "appendLog":
+      return {
+        ...state,
+        logs: { ...state.logs, [action.key]: [...(state.logs[action.key] || []), action.line] },
+      };
+    case "recordRSS":
+      if (action.rssBytes <= (state.rssByKey[action.key] || 0)) return state;
+      return { ...state, rssByKey: { ...state.rssByKey, [action.key]: action.rssBytes } };
+    case "select":
+      return { ...state, selectedKey: action.key };
+    case "setRemoveOpen":
+      return { ...state, removeOpen: action.open };
+    case "setPruneOpen":
+      return { ...state, pruneOpen: action.open };
+    case "removeLogSuccess": {
+      const logs = { ...state.logs };
+      const rssByKey = { ...state.rssByKey };
+      delete logs[action.key];
+      delete rssByKey[action.key];
+      return { ...state, logs, rssByKey, selectedKey: null, removeOpen: false };
+    }
+    case "pruneLogsSuccess":
+      return { ...state, pruneOpen: false };
+  }
+}
 
 function opKey(accountId: number, operationId: string) {
   return `${accountId}|${operationId}`;
+}
+
+function StatusMark({ status }: { status?: OpStatus }) {
+  if (status === "ok") {
+    return (
+      <Box w={10} h={10} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontSize: 12, lineHeight: 1 }}>✅</span>
+      </Box>
+    );
+  }
+  return (
+    <Indicator
+      color={status === "running" ? "green" : "red"}
+      processing={status === "running"}
+      disabled={!status}
+      size={10}
+      position="middle-start"
+      offset={5}
+    >
+      <Box w={10} h={10} />
+    </Indicator>
+  );
 }
 
 function formatRSS(bytes?: number) {
@@ -23,11 +113,11 @@ function formatRSS(bytes?: number) {
   return `[${Math.max(1, Math.round(mb))}MB]`;
 }
 
-function isNearBottom(el: HTMLDivElement) {
+function isNearBottom(el: HTMLElement) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < 40;
 }
 
-export function OutputPane({
+function useOutputPaneModel({
   accounts,
   syncSelect,
 }: {
@@ -35,15 +125,12 @@ export function OutputPane({
   syncSelect: { accountId: number; token: number } | null;
 }) {
   const { data: ops } = useQuery({ queryKey: qk.operations, queryFn: api.listOperations });
-  const [logs, setLogs] = useState<LogMap>({});
-  const [rssByKey, setRssByKey] = useState<RssMap>({});
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [state, dispatch] = useReducer(paneReducer, initialPaneState);
   const viewportRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
   const programmaticFollowRef = useRef(false);
   const renderedLogRef = useRef({ selected: null as string | null, version: "" });
-  // When a sync is started, auto-select the target account's next operation log
-  // once its "operation" event arrives.
   const autoSelectAccountId = useRef<number | null>(null);
   const lastSyncSelectTokenRef = useRef<number | null>(null);
 
@@ -62,18 +149,30 @@ export function OutputPane({
   };
 
   const selectOperation = (key: string | null, behavior: ScrollBehavior = "auto") => {
-    setSelectedKey(key);
+    dispatch({ type: "select", key });
     resetScroll(behavior);
   };
 
-  // Single global SSE connection: append live log lines + invalidate caches.
+  const removeLog = useMutation({
+    mutationFn: (v: { id: number; ts: string; key: string }) => api.deleteAccountLog(v.id, v.ts),
+    onSuccess: (_data, v) => {
+      queryClient.invalidateQueries({ queryKey: qk.operations });
+      dispatch({ type: "removeLogSuccess", key: v.key });
+    },
+  });
+  const pruneLogs = useMutation({
+    mutationFn: () => api.pruneLogs(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk.operations });
+      dispatch({ type: "pruneLogsSuccess" });
+    },
+  });
+
   useSSE(
     (accountId, operationId, line, rssBytes) => {
       const key = opKey(accountId, operationId);
-      setLogs((prev) => ({ ...prev, [key]: [...(prev[key] || []), stripRSS(line)] }));
-      if (rssBytes && rssBytes > 0) {
-        setRssByKey((prev) => ({ ...prev, [key]: Math.max(prev[key] || 0, rssBytes) }));
-      }
+      dispatch({ type: "appendLog", key, line: stripRSS(line) });
+      if (rssBytes && rssBytes > 0) dispatch({ type: "recordRSS", key, rssBytes });
     },
     (accountId, operationId) => {
       if (autoSelectAccountId.current === accountId) {
@@ -108,19 +207,23 @@ export function OutputPane({
   const accountMap = new Map<number, string>();
   accounts.forEach((a) => accountMap.set(a.id, a.source_user));
 
-  // Merge persisted operations (disk) with any live-only keys present in logs.
   const seen = new Set<string>();
-  const merged = [
-    ...(ops || []).map((o) => ({ key: opKey(o.account_id, o.operation_id), accountId: o.account_id, opId: o.operation_id, rssBytes: o.rss_bytes })),
-    ...Object.keys(logs).map((k) => {
+  const merged: OperationEntry[] = [
+    ...(ops || []).map((o): OperationEntry => ({
+      key: opKey(o.account_id, o.operation_id),
+      accountId: o.account_id,
+      opId: o.operation_id,
+      rssBytes: o.rss_bytes,
+    })),
+    ...Object.keys(state.logs).map((k) => {
       const [aid, oid] = k.split("|");
-      return { key: k, accountId: Number(aid), opId: oid, rssBytes: undefined };
+      return { key: k, accountId: Number(aid), opId: oid } satisfies OperationEntry;
     }),
   ]
     .filter((o) => (seen.has(o.key) ? false : (seen.add(o.key), true)))
     .sort((a, b) => b.opId.localeCompare(a.opId));
 
-  const selected = selectedKey && merged.some((o) => o.key === selectedKey) ? selectedKey : merged[0]?.key ?? null;
+  const selected = state.selectedKey && merged.some((o) => o.key === state.selectedKey) ? state.selectedKey : merged[0]?.key ?? null;
   const selectedParts = selected?.split("|");
   const selectedAccountId = selectedParts ? Number(selectedParts[0]) : null;
   const selectedOperationId = selectedParts?.[1] ?? null;
@@ -131,10 +234,6 @@ export function OutputPane({
     enabled: persistedSelected && selectedAccountId !== null && selectedOperationId !== null,
   });
 
-  // Attribute each account's live last_status to its most recent log entry.
-  // operation_ids are RFC3339 timestamps, so the lexicographic max per account
-  // is its current/last run; only that entry gets a status indicator. This
-  // naturally supports several accounts syncing at once.
   const accountById = new Map<number, Account>();
   accounts.forEach((a) => accountById.set(a.id, a));
   const newestOpByAccount = new Map<number, string>();
@@ -142,25 +241,24 @@ export function OutputPane({
     const cur = newestOpByAccount.get(o.accountId);
     if (cur === undefined || o.opId > cur) newestOpByAccount.set(o.accountId, o.opId);
   }
-  type OpStatus = "running" | "stopped";
   const statusByKey = new Map<string, OpStatus>();
   for (const o of merged) {
     const a = accountById.get(o.accountId);
     if (!a || o.opId !== newestOpByAccount.get(o.accountId)) continue;
-    if (a.last_status === "running" || a.last_status === "stopped") {
+    if (a.last_status === "running" || a.last_status === "stopped" || a.last_status === "ok") {
       statusByKey.set(o.key, a.last_status);
     }
   }
+
   const selStatus = selected ? statusByKey.get(selected) : undefined;
   const persistedRssByKey = new Map<string, number>();
   for (const o of merged) {
     if (o.rssBytes) persistedRssByKey.set(o.key, o.rssBytes);
   }
-  const rssForKey = (key: string) => rssByKey[key] || persistedRssByKey.get(key) || 0;
+  const rssForKey = (key: string) => state.rssByKey[key] || persistedRssByKey.get(key) || 0;
   const selectedRSS = selected ? formatRSS(rssForKey(selected)) : "";
-
   const lines = selected
-    ? mergeHistoricalAndLiveLines(historicalLog ? splitLogContent(historicalLog.content) : [], logs[selected] ?? [])
+    ? mergeHistoricalAndLiveLines(historicalLog ? splitLogContent(historicalLog.content) : [], state.logs[selected] ?? [])
     : [];
   const logVersion = `${lines.length}|${lines[lines.length - 1] ?? ""}`;
   const options = merged.map((o) => ({
@@ -168,133 +266,296 @@ export function OutputPane({
     label: `${accountMap.get(o.accountId) || "#" + o.accountId} — ${o.opId}`,
   }));
 
+  return {
+    atBottomRef,
+    lines,
+    logVersion,
+    options,
+    pauseAutoFollow,
+    programmaticFollowRef,
+    pruneLogs,
+    pruneOpen: state.pruneOpen,
+    removeLog,
+    removeOpen: state.removeOpen,
+    resetScroll,
+    rssForKey,
+    selected,
+    selectedAccountId,
+    selectedOperationId,
+    selectedRSS,
+    selectOperation,
+    selStatus,
+    setPruneOpen: (open: boolean) => dispatch({ type: "setPruneOpen", open }),
+    setRemoveOpen: (open: boolean) => dispatch({ type: "setRemoveOpen", open }),
+    statusByKey,
+    viewportRef,
+    renderedLogRef,
+  };
+}
+
+function LogsToolbar({
+  canRemove,
+  onJump,
+  onPrune,
+  onRemove,
+  pruneOpen,
+  pruning,
+  removeOpen,
+  removing,
+  setPruneOpen,
+  setRemoveOpen,
+}: {
+  canRemove: boolean;
+  onJump: () => void;
+  onPrune: () => void;
+  onRemove: () => void;
+  pruneOpen: boolean;
+  pruning: boolean;
+  removeOpen: boolean;
+  removing: boolean;
+  setPruneOpen: (open: boolean) => void;
+  setRemoveOpen: (open: boolean) => void;
+}) {
   return (
-    <Paper>
-      <Group justify="space-between" align="center" gap="xs" wrap="nowrap" mb={4}>
-        <Text size="sm" fw={500}>
-          Logs
-        </Text>
-        <Anchor
-          component="button"
-          type="button"
-          size="xs"
-          c="dimmed"
-          onClick={() => resetScroll("smooth")}
-        >
+    <Group justify="space-between" align="center" gap="xs" wrap="nowrap" mb={4}>
+      <Text size="sm" fw={500}>
+        Logs
+      </Text>
+      <Group gap="sm" align="center" wrap="nowrap">
+        <Anchor component="button" type="button" size="xs" c="dimmed" onClick={onJump}>
           jump to latest
         </Anchor>
-      </Group>
-      <Select
-        placeholder="Select a log"
-        data={options}
-        value={selected}
-        onChange={(key) => selectOperation(key)}
-        searchable
-        rightSection={
-          selectedRSS ? (
-            <Text size="xs" c="dimmed" ff="var(--mantine-font-family-monospace)">
-              {selectedRSS}
-            </Text>
-          ) : undefined
-        }
-        rightSectionWidth={selectedRSS ? 76 : undefined}
-        leftSection={
-          selStatus ? (
-            <Indicator
-              color={selStatus === "running" ? "green" : "red"}
-              processing={selStatus === "running"}
-              size={10}
-              position="middle-start"
-              offset={5}
+        <Popover opened={removeOpen} onChange={setRemoveOpen} position="bottom-end" withArrow shadow="md" trapFocus>
+          <Popover.Target>
+            <Anchor
+              component="button"
+              type="button"
+              size="xs"
+              c="red"
+              disabled={!canRemove}
+              onClick={() => setRemoveOpen(!removeOpen)}
             >
-              <Box w={10} h={10} />
-            </Indicator>
-          ) : undefined
-        }
-        renderOption={(item) => {
-          const st = statusByKey.get(item.option.value);
-          const rss = formatRSS(rssForKey(item.option.value));
-          const isSelected = item.option.value === selected;
-          return (
-            <Group gap="xs" wrap="nowrap" align="center" w="100%">
-              <Indicator
-                color={st === "running" ? "green" : "red"}
-                processing={st === "running"}
-                disabled={!st}
-                size={10}
-                position="middle-start"
-                offset={5}
-              >
-                <Box w={10} h={10} />
-              </Indicator>
-              <span
-                style={{
-                  flex: 1,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  fontWeight: isSelected ? 700 : 400,
-                }}
-              >
-                {item.option.label}
-              </span>
-              {rss ? (
-                <Text size="xs" c="dimmed" ff="var(--mantine-font-family-monospace)">
-                  {rss}
-                </Text>
-              ) : null}
-            </Group>
-          );
-        }}
-      />
-      <Box
-        mt="xs"
-        p="sm"
-        style={{
-          background: "var(--mantine-color-dark-8)",
-          borderRadius: "var(--mantine-radius-xs)",
-          position: "relative",
+              remove log
+            </Anchor>
+          </Popover.Target>
+          <Popover.Dropdown>
+            <Stack gap="xs">
+              <Text size="xs">Delete this log from the list and disk?</Text>
+              <Group gap="xs" justify="flex-end">
+                <Button size="xs" variant="default" onClick={() => setRemoveOpen(false)}>
+                  Cancel
+                </Button>
+                <Button size="xs" color="red" loading={removing} onClick={onRemove}>
+                  Remove
+                </Button>
+              </Group>
+            </Stack>
+          </Popover.Dropdown>
+        </Popover>
+        <Popover opened={pruneOpen} onChange={setPruneOpen} position="bottom-end" withArrow shadow="md" trapFocus>
+          <Popover.Target>
+            <Anchor component="button" type="button" size="xs" c="dimmed" onClick={() => setPruneOpen(!pruneOpen)}>
+              prune older than 24h
+            </Anchor>
+          </Popover.Target>
+          <Popover.Dropdown>
+            <Stack gap="xs">
+              <Text size="xs">Delete all logs older than 24 hours (every account)?</Text>
+              <Group gap="xs" justify="flex-end">
+                <Button size="xs" variant="default" onClick={() => setPruneOpen(false)}>
+                  Cancel
+                </Button>
+                <Button size="xs" color="red" loading={pruning} onClick={onPrune}>
+                  Prune
+                </Button>
+              </Group>
+            </Stack>
+          </Popover.Dropdown>
+        </Popover>
+      </Group>
+    </Group>
+  );
+}
+
+function OperationSelector({
+  options,
+  rssForKey,
+  selected,
+  selectedRSS,
+  selStatus,
+  statusByKey,
+  onSelect,
+}: {
+  options: { value: string; label: string }[];
+  rssForKey: (key: string) => number;
+  selected: string | null;
+  selectedRSS: string;
+  selStatus?: OpStatus;
+  statusByKey: Map<string, OpStatus>;
+  onSelect: (key: string | null) => void;
+}) {
+  return (
+    <Select
+      placeholder="Select a log"
+      data={options}
+      value={selected}
+      onChange={onSelect}
+      searchable
+      rightSection={
+        selectedRSS ? (
+          <Text size="xs" c="dimmed" ff="var(--mantine-font-family-monospace)">
+            {selectedRSS}
+          </Text>
+        ) : undefined
+      }
+      rightSectionWidth={selectedRSS ? 76 : undefined}
+      leftSection={selStatus ? <StatusMark status={selStatus} /> : undefined}
+      renderOption={(item) => {
+        const st = statusByKey.get(item.option.value);
+        const rss = formatRSS(rssForKey(item.option.value));
+        const isSelected = item.option.value === selected;
+        return (
+          <Group gap="xs" wrap="nowrap" align="center" w="100%">
+            <StatusMark status={st} />
+            <span
+              style={{
+                flex: 1,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                fontWeight: isSelected ? 700 : 400,
+              }}
+            >
+              {item.option.label}
+            </span>
+            {rss ? (
+              <Text size="xs" c="dimmed" ff="var(--mantine-font-family-monospace)">
+                {rss}
+              </Text>
+            ) : null}
+          </Group>
+        );
+      }}
+    />
+  );
+}
+
+function LogOutput({
+  atBottomRef,
+  lines,
+  logVersion,
+  pauseAutoFollow,
+  programmaticFollowRef,
+  renderedLogRef,
+  selected,
+  viewportRef,
+}: {
+  atBottomRef: MutableRefObject<boolean>;
+  lines: string[];
+  logVersion: string;
+  pauseAutoFollow: () => void;
+  programmaticFollowRef: MutableRefObject<boolean>;
+  renderedLogRef: MutableRefObject<{ selected: string | null; version: string }>;
+  selected: string | null;
+  viewportRef: RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <Box
+      mt="xs"
+      p="sm"
+      style={{
+        background: "var(--mantine-color-dark-8)",
+        borderRadius: "var(--mantine-radius-xs)",
+        position: "relative",
+      }}
+    >
+      <ScrollArea
+        h={LOG_HEIGHT}
+        viewportRef={viewportRef}
+        onWheel={(e) => {
+          if (e.deltaY < 0 || (viewportRef.current && !isNearBottom(viewportRef.current))) pauseAutoFollow();
         }}
       >
-        <ScrollArea
-          h={LOG_HEIGHT}
-          viewportRef={viewportRef}
-          onWheel={(e) => {
-            if (e.deltaY < 0 || (viewportRef.current && !isNearBottom(viewportRef.current))) {
-              pauseAutoFollow();
-            }
+        <pre
+          ref={(node) => {
+            if (!node) return;
+            const previous = renderedLogRef.current;
+            const selectionChanged = previous.selected !== selected;
+            const contentChanged = previous.version !== logVersion;
+            renderedLogRef.current = { selected, version: logVersion };
+            if (!selectionChanged && (!contentChanged || !atBottomRef.current)) return;
+
+            atBottomRef.current = true;
+            programmaticFollowRef.current = false;
+            requestAnimationFrame(() => {
+              const el = viewportRef.current;
+              if (el) el.scrollTo({ top: el.scrollHeight, behavior: selectionChanged ? "auto" : "smooth" });
+            });
+          }}
+          style={{
+            margin: 0,
+            fontFamily: "var(--mantine-font-family-monospace)",
+            fontSize: 12,
+            lineHeight: 1.4,
+            color: "var(--mantine-color-gray-3)",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
           }}
         >
-          <pre
-            ref={(node) => {
-              if (!node) return;
-              const previous = renderedLogRef.current;
-              const selectionChanged = previous.selected !== selected;
-              const contentChanged = previous.version !== logVersion;
-              renderedLogRef.current = { selected, version: logVersion };
-              if (!selectionChanged && (!contentChanged || !atBottomRef.current)) return;
+          {lines.length ? lines.join("\n") : "(no output yet — start a sync)"}
+        </pre>
+      </ScrollArea>
+    </Box>
+  );
+}
 
-              atBottomRef.current = true;
-              programmaticFollowRef.current = false;
-              requestAnimationFrame(() => {
-                const el = viewportRef.current;
-                if (el) el.scrollTo({ top: el.scrollHeight, behavior: selectionChanged ? "auto" : "smooth" });
-              });
-            }}
-            style={{
-              margin: 0,
-              fontFamily: "var(--mantine-font-family-monospace)",
-              fontSize: 12,
-              lineHeight: 1.4,
-              color: "var(--mantine-color-gray-3)",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-            }}
-          >
-            {lines.length ? lines.join("\n") : "(no output yet — start a sync)"}
-          </pre>
-        </ScrollArea>
-      </Box>
+export function OutputPane({
+  accounts,
+  syncSelect,
+}: {
+  accounts: Account[];
+  syncSelect: { accountId: number; token: number } | null;
+}) {
+  const model = useOutputPaneModel({ accounts, syncSelect });
+  const removeSelectedLog = () => {
+    if (model.selected && model.selectedAccountId !== null && model.selectedOperationId) {
+      model.removeLog.mutate({ id: model.selectedAccountId, ts: model.selectedOperationId, key: model.selected });
+    }
+  };
+
+  return (
+    <Paper>
+      <LogsToolbar
+        canRemove={Boolean(model.selected && model.selStatus !== "running")}
+        onJump={() => model.resetScroll("smooth")}
+        onPrune={() => model.pruneLogs.mutate()}
+        onRemove={removeSelectedLog}
+        pruneOpen={model.pruneOpen}
+        pruning={model.pruneLogs.isPending}
+        removeOpen={model.removeOpen}
+        removing={model.removeLog.isPending}
+        setPruneOpen={model.setPruneOpen}
+        setRemoveOpen={model.setRemoveOpen}
+      />
+      <OperationSelector
+        options={model.options}
+        rssForKey={model.rssForKey}
+        selected={model.selected}
+        selectedRSS={model.selectedRSS}
+        selStatus={model.selStatus}
+        statusByKey={model.statusByKey}
+        onSelect={model.selectOperation}
+      />
+      <LogOutput
+        atBottomRef={model.atBottomRef}
+        lines={model.lines}
+        logVersion={model.logVersion}
+        pauseAutoFollow={model.pauseAutoFollow}
+        programmaticFollowRef={model.programmaticFollowRef}
+        renderedLogRef={model.renderedLogRef}
+        selected={model.selected}
+        viewportRef={model.viewportRef}
+      />
     </Paper>
   );
 }

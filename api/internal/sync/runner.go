@@ -57,6 +57,7 @@ type Runner struct {
 	runCtx    context.Context
 	runCancel context.CancelFunc
 	active    map[int64]*exec.Cmd
+	activeOps map[int64]string
 	runDone   chan struct{} // closed when the current run has fully drained
 }
 
@@ -70,6 +71,14 @@ func (r *Runner) IsRunning() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.running
+}
+
+// IsOperationActive reports whether the given account operation is still owned
+// by the runner. This includes setup/teardown time around the imapsync process.
+func (r *Runner) IsOperationActive(accountID int64, operationID string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.activeOps != nil && r.activeOps[accountID] == operationID
 }
 
 // Wait blocks until the current run (if any) has fully finished — every active
@@ -135,6 +144,7 @@ func (r *Runner) run(ids []int64) {
 	r.runCtx = runCtx
 	r.runCancel = cancel
 	r.active = make(map[int64]*exec.Cmd)
+	r.activeOps = make(map[int64]string)
 	r.runDone = done
 	r.mu.Unlock()
 
@@ -146,6 +156,7 @@ func (r *Runner) run(ids []int64) {
 		r.runCtx = nil
 		r.runCancel = nil
 		r.active = nil
+		r.activeOps = nil
 		r.runDone = nil
 		r.mu.Unlock()
 		close(done)
@@ -184,6 +195,18 @@ func (r *Runner) syncAccount(runCtx context.Context, accountID int64) {
 	}
 	sourceUser := account.SourceUser
 	opID := opStamp()
+	r.mu.Lock()
+	if r.activeOps != nil {
+		r.activeOps[accountID] = opID
+	}
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		if r.activeOps != nil && r.activeOps[accountID] == opID {
+			delete(r.activeOps, accountID)
+		}
+		r.mu.Unlock()
+	}()
 
 	r.deps.Bus.Publish(events.Event{
 		Type: "operation", AccountID: accountID, SourceUser: sourceUser,

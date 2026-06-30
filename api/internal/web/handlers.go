@@ -493,6 +493,74 @@ func (s *Server) getAccountLog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"content": string(data)})
 }
 
+// deleteAccountLog removes a single operation log file (and its .rss sidecar)
+// from disk. The UI only enables this for logs that are not currently running.
+func (s *Server) deleteAccountLog(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseID(w, r)
+	if !ok {
+		return
+	}
+	acc, err := s.q.GetAccount(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "account not found"})
+		return
+	}
+	ts := r.URL.Query().Get("ts")
+	if ts == "" || strings.ContainsAny(ts, "/\\") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid ts"})
+		return
+	}
+	if s.runner != nil && s.runner.IsOperationActive(id, ts) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "log is still running"})
+		return
+	}
+	logPath := filepath.Join(s.paths.AccountLogDir(acc.SourceUser), ts+".log")
+	if err := os.Remove(logPath); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "log not found"})
+		return
+	}
+	_ = os.Remove(logRSSPath(logPath)) // sidecar may not exist
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// pruneLogs deletes every operation log (across all accounts) whose timestamp is
+// older than 24 hours, including the .rss sidecars. Op ids are RFC3339-style
+// stamps produced by the runner; ones that fail to parse are skipped.
+func (s *Server) pruneLogs(w http.ResponseWriter, r *http.Request) {
+	accounts, err := s.q.ListAccounts(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	cutoff := time.Now().UTC().Add(-24 * time.Hour)
+	removed := 0
+	for _, acc := range accounts {
+		dir := s.paths.AccountLogDir(acc.SourceUser)
+		for _, op := range listOpsForAccount(dir) {
+			if s.runner != nil && s.runner.IsOperationActive(acc.ID, op) {
+				continue
+			}
+			t, perr := time.Parse("2006-01-02T15-04-05.000000000Z", op)
+			if perr != nil || !t.Before(cutoff) {
+				continue
+			}
+			logPath := filepath.Join(dir, op+".log")
+			if err := os.Remove(logPath); err != nil {
+				continue
+			}
+			_ = os.Remove(logRSSPath(logPath))
+			removed++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
+}
+
+// logRSSPath returns the .rss sidecar path for an operation log path. Mirrors
+// rssPath in internal/sync (unexported there).
+func logRSSPath(logPath string) string {
+	return strings.TrimSuffix(logPath, ".log") + ".rss"
+}
+
 func (s *Server) listOperations(w http.ResponseWriter, r *http.Request) {
 	accounts, err := s.q.ListAccounts(r.Context())
 	if err != nil {
