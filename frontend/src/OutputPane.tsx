@@ -21,7 +21,7 @@ const LOG_HEIGHT = 550;
 
 type LogMap = Record<string, string[]>;
 type RssMap = Record<string, number>;
-type OpStatus = "running" | "stopped" | "ok";
+type OpStatus = "running" | "stopped" | "failed" | "ok";
 type OperationEntry = { key: string; accountId: number; opId: string; rssBytes?: number };
 
 type PaneState = {
@@ -82,16 +82,9 @@ function opKey(accountId: number, operationId: string) {
 }
 
 function StatusMark({ status }: { status?: OpStatus }) {
-  if (status === "ok") {
-    return (
-      <Box w={10} h={10} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontSize: 12, lineHeight: 1 }}>✅</span>
-      </Box>
-    );
-  }
   return (
     <Indicator
-      color={status === "running" ? "green" : "red"}
+      color={status === "running" ? "yellow" : status === "ok" ? "green" : "red"}
       processing={status === "running"}
       disabled={!status}
       size={10}
@@ -245,7 +238,7 @@ function useOutputPaneModel({
   for (const o of merged) {
     const a = accountById.get(o.accountId);
     if (!a || o.opId !== newestOpByAccount.get(o.accountId)) continue;
-    if (a.last_status === "running" || a.last_status === "stopped" || a.last_status === "ok") {
+    if (a.last_status === "running" || a.last_status === "stopped" || a.last_status === "failed" || a.last_status === "ok") {
       statusByKey.set(o.key, a.last_status);
     }
   }
@@ -325,7 +318,7 @@ function LogsToolbar({
         <Anchor component="button" type="button" size="xs" c="dimmed" onClick={onJump}>
           jump to latest
         </Anchor>
-        <Popover opened={removeOpen} onChange={setRemoveOpen} position="bottom-end" withArrow shadow="md" trapFocus>
+        <Popover opened={removeOpen} onChange={setRemoveOpen} position="top-end" withArrow={false} shadow="md" trapFocus>
           <Popover.Target>
             <Anchor
               component="button"
@@ -352,9 +345,9 @@ function LogsToolbar({
             </Stack>
           </Popover.Dropdown>
         </Popover>
-        <Popover opened={pruneOpen} onChange={setPruneOpen} position="bottom-end" withArrow shadow="md" trapFocus>
+        <Popover opened={pruneOpen} onChange={setPruneOpen} position="top-end" withArrow={false} shadow="md" trapFocus>
           <Popover.Target>
-            <Anchor component="button" type="button" size="xs" c="dimmed" onClick={() => setPruneOpen(!pruneOpen)}>
+            <Anchor component="button" type="button" size="xs" c="red" onClick={() => setPruneOpen(!pruneOpen)}>
               prune older than 24h
             </Anchor>
           </Popover.Target>
