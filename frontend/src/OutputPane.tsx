@@ -318,7 +318,14 @@ function LogsToolbar({
         <Anchor component="button" type="button" size="xs" c="dimmed" onClick={onJump}>
           jump to latest
         </Anchor>
-        <Popover opened={removeOpen} onChange={setRemoveOpen} position="top-end" withArrow={false} shadow="md" trapFocus>
+        <Popover
+          opened={canRemove && removeOpen}
+          onChange={(open) => setRemoveOpen(canRemove && open)}
+          position="top-end"
+          withArrow={false}
+          shadow="md"
+          trapFocus
+        >
           <Popover.Target>
             <Anchor
               component="button"
@@ -326,7 +333,9 @@ function LogsToolbar({
               size="xs"
               c="red"
               disabled={!canRemove}
-              onClick={() => setRemoveOpen(!removeOpen)}
+              onClick={() => {
+                if (canRemove) setRemoveOpen(!removeOpen);
+              }}
             >
               remove log
             </Anchor>
@@ -338,7 +347,7 @@ function LogsToolbar({
                 <Button size="xs" variant="default" onClick={() => setRemoveOpen(false)}>
                   Cancel
                 </Button>
-                <Button size="xs" color="red" loading={removing} onClick={onRemove}>
+                <Button size="xs" color="red" loading={removing} disabled={!canRemove} onClick={onRemove}>
                   Remove
                 </Button>
               </Group>
@@ -511,7 +520,7 @@ export function OutputPane({
 }) {
   const model = useOutputPaneModel({ accounts, syncSelect });
   const removeSelectedLog = () => {
-    if (model.selected && model.selectedAccountId !== null && model.selectedOperationId) {
+    if (model.selected && model.selStatus !== "running" && model.selectedAccountId !== null && model.selectedOperationId) {
       model.removeLog.mutate({ id: model.selectedAccountId, ts: model.selectedOperationId, key: model.selected });
     }
   };
