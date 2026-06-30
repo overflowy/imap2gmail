@@ -1,7 +1,7 @@
 // Package config resolves the on-disk paths the app uses, all relative to the
 // binary's current working directory: ./data/db/data.db (secrets, 0600),
 // ./data/logs/<source_user>/ (per-operation sync logs), and ./run/ (0700,
-// transient 0600 token files passed to imapsync).
+// transient token and pid files passed to imapsync).
 package config
 
 import (
@@ -81,7 +81,13 @@ func (p *Paths) AccountLogDir(sourceUser string) string {
 
 // TokenFilePath returns a 0600-destined path for an account's access-token file.
 func (p *Paths) TokenFilePath(accountID int64) string {
-	return filepath.Join(runDir, fmt.Sprintf("token-%d.txt", accountID))
+	return filepath.Join(p.RunDir, fmt.Sprintf("token-%d.txt", accountID))
+}
+
+// PidFilePath returns a per-operation imapsync pid file path so concurrent
+// imapsync children never share imapsync's default $HOME/tmp/imapsync.pid.
+func (p *Paths) PidFilePath(accountID int64, opID string) string {
+	return filepath.Join(p.RunDir, fmt.Sprintf("imapsync-%d-%s.pid", accountID, opID))
 }
 
 // TightenDB sets the DB file mode to 0600 (it holds plaintext secrets).
@@ -89,12 +95,14 @@ func TightenDB(path string) error {
 	return os.Chmod(path, 0o600)
 }
 
-// CleanRunDir removes stale transient access-token files left behind by a
-// previous crash/kill. They are 0600 and hold short-lived tokens, but tidying
-// them on startup avoids leaving credentials on disk.
+// CleanRunDir removes stale transient files left behind by a previous crash/kill.
+// Token files are 0600 and hold short-lived credentials, and pid files are only
+// useful while their imapsync child is alive.
 func CleanRunDir() {
-	matches, _ := filepath.Glob(filepath.Join(runDir, "token-*.txt"))
-	for _, m := range matches {
-		_ = os.Remove(m)
+	for _, pattern := range []string{"token-*.txt", "imapsync-*.pid"} {
+		matches, _ := filepath.Glob(filepath.Join(runDir, pattern))
+		for _, m := range matches {
+			_ = os.Remove(m)
+		}
 	}
 }

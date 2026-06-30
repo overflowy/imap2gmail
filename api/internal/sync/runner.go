@@ -269,14 +269,16 @@ func (r *Runner) syncAccount(runCtx context.Context, accountID int64) {
 		r.mark(dbc, accountID, sourceUser, opID, "failed", "write token file: "+err.Error())
 		return
 	}
+	pidFile := r.deps.Paths.PidFilePath(accountID, opID)
 
 	refCtx, refCancel := context.WithCancel(runCtx)
 	go r.refreshLoop(refCtx, dest.RefreshToken, tokenFile, account.DestGmail)
 
-	argv, err := BuildArgv(s, account, tokenFile)
+	argv, err := BuildArgv(s, account, tokenFile, pidFile)
 	if err != nil {
 		refCancel()
 		_ = os.Remove(tokenFile)
+		_ = os.Remove(pidFile)
 		r.logLine(accountID, sourceUser, opID, logPath, "==== FAILED: "+err.Error()+" ====")
 		r.mark(dbc, accountID, sourceUser, opID, "failed", err.Error())
 		return
@@ -295,6 +297,7 @@ func (r *Runner) syncAccount(runCtx context.Context, accountID int64) {
 
 	refCancel()
 	_ = os.Remove(tokenFile)
+	_ = os.Remove(pidFile)
 	r.mu.Lock()
 	delete(r.active, accountID)
 	r.mu.Unlock()

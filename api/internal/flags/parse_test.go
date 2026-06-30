@@ -39,6 +39,8 @@ func TestValidate(t *testing.T) {
 		"--automap --log",        // file logging app-managed
 		"--nolog",                // file logging app-managed
 		"--logdir /tmp/x",        // file logging app-managed
+		"--pidfile /tmp/x.pid",   // pid files app-managed
+		"--pidfilelocking",       // pid files app-managed
 	}
 	for _, s := range bad {
 		if err := Validate(s); err == nil {

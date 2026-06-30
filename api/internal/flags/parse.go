@@ -15,7 +15,8 @@ import (
 // flag string: connection, credentials, identity (source + destination), OAuth
 // tokens/refresh, admin-auth users, the Gmail-mode switch, dry-run, and file
 // logging (the app captures combined output itself, so imapsync's
-// LOG_imapsync/ directory logging is suppressed via --nolog and must stay off).
+// LOG_imapsync/ directory logging is suppressed via --nolog and must stay off),
+// and per-operation pid files.
 var DeniedFlags = map[string]struct{}{
 	"--host1":             {},
 	"--port1":             {},
@@ -42,6 +43,8 @@ var DeniedFlags = map[string]struct{}{
 	"--nolog":             {},
 	"--logfile":           {},
 	"--logdir":            {},
+	"--pidfile":           {},
+	"--pidfilelocking":    {},
 }
 
 // Parse tokenizes the flag string (POSIX-ish: single/double quotes and

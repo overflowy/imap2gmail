@@ -22,10 +22,10 @@ import (
 )
 
 // BuildArgv constructs the imapsync argv from the global settings, the account,
-// and the path to the 0600 access-token file. App-managed connection/auth flags
-// are fixed; the global flag string contributes only behavior flags (re-validated
+// and app-managed transient files. App-managed connection/auth/pid flags are
+// fixed; the global flag string contributes only behavior flags (re-validated
 // here as a backstop); --dry is controlled solely by the dry_run setting.
-func BuildArgv(s gen.Setting, account gen.Account, tokenFile string) ([]string, error) {
+func BuildArgv(s gen.Setting, account gen.Account, tokenFile, pidFile string) ([]string, error) {
 	extra, err := flags.Parse(s.ImapsyncFlags)
 	if err != nil {
 		return nil, fmt.Errorf("parse imapsync flags: %w", err)
@@ -51,6 +51,7 @@ func BuildArgv(s gen.Setting, account gen.Account, tokenFile string) ([]string, 
 		"--oauthaccesstoken2", tokenFile,
 		"--gmail2",
 		"--nolog",
+		"--pidfile", pidFile,
 	)
 	argv = append(argv, extra...)
 	if s.DryRun {

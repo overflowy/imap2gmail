@@ -28,7 +28,7 @@ func contains(argv []string, token string) bool {
 }
 
 func TestBuildArgvBasic(t *testing.T) {
-	argv, err := BuildArgv(sampleSetting(), sampleAccount(), "/run/token-7.txt")
+	argv, err := BuildArgv(sampleSetting(), sampleAccount(), "/run/token-7.txt", "/run/imapsync-7-op.pid")
 	if err != nil {
 		t.Fatalf("BuildArgv error: %v", err)
 	}
@@ -49,6 +49,7 @@ func TestBuildArgvBasic(t *testing.T) {
 		"--oauthaccesstoken2", "/run/token-7.txt",
 		"--gmail2",
 		"--nolog",
+		"--pidfile", "/run/imapsync-7-op.pid",
 		"--automap", "--useheader", "Message-Id",
 		"--dry",
 	}
@@ -62,7 +63,7 @@ func TestBuildArgvNoSslNoDry(t *testing.T) {
 	s.OriginSsl = false
 	s.DryRun = false
 	s.ImapsyncFlags = "--automap"
-	argv, err := BuildArgv(s, sampleAccount(), "/run/t.txt")
+	argv, err := BuildArgv(s, sampleAccount(), "/run/t.txt", "/run/p.pid")
 	if err != nil {
 		t.Fatalf("BuildArgv error: %v", err)
 	}
@@ -86,8 +87,16 @@ func TestBuildArgvNoSslNoDry(t *testing.T) {
 func TestBuildArgvDenylistBackstop(t *testing.T) {
 	s := sampleSetting()
 	s.ImapsyncFlags = "--automap --password1 evil"
-	if _, err := BuildArgv(s, sampleAccount(), "/run/t.txt"); err == nil {
+	if _, err := BuildArgv(s, sampleAccount(), "/run/t.txt", "/run/p.pid"); err == nil {
 		t.Error("BuildArgv should reject denied flags as a backstop")
+	}
+}
+
+func TestBuildArgvDeniesPidfileOverride(t *testing.T) {
+	s := sampleSetting()
+	s.ImapsyncFlags = "--pidfile /tmp/shared.pid"
+	if _, err := BuildArgv(s, sampleAccount(), "/run/t.txt", "/run/p.pid"); err == nil {
+		t.Error("BuildArgv should reject user-supplied --pidfile")
 	}
 }
 
@@ -95,7 +104,7 @@ func TestBuildArgvQuotedFlag(t *testing.T) {
 	s := sampleSetting()
 	s.DryRun = false
 	s.ImapsyncFlags = `--regextrans2 's/foo/bar/'`
-	argv, err := BuildArgv(s, sampleAccount(), "/run/t.txt")
+	argv, err := BuildArgv(s, sampleAccount(), "/run/t.txt", "/run/p.pid")
 	if err != nil {
 		t.Fatalf("BuildArgv error: %v", err)
 	}
