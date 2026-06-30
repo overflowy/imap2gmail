@@ -331,8 +331,11 @@ function LogsToolbar({
               component="button"
               type="button"
               size="xs"
-              c="red"
+              c={canRemove ? "red" : "dimmed"}
               disabled={!canRemove}
+              aria-disabled={!canRemove}
+              tabIndex={canRemove ? 0 : -1}
+              style={{ cursor: canRemove ? "pointer" : "not-allowed", opacity: canRemove ? 1 : 0.55 }}
               onClick={() => {
                 if (canRemove) setRemoveOpen(!removeOpen);
               }}
