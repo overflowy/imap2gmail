@@ -43,7 +43,7 @@ const statusLabel: Record<string, string> = {
 };
 
 function showAuthBadge(a: Account) {
-  return a.last_status !== "running" && a.last_status !== "stopped" && a.last_status !== "ok";
+	return a.last_status !== "running" && a.last_status !== "stopped" && a.last_status !== "failed" && a.last_status !== "ok";
 }
 
 export function AccountsTable({
